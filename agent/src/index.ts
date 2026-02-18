@@ -1,4 +1,5 @@
-import express from "express";
+import express, { type ErrorRequestHandler } from "express";
+import helmet from "helmet";
 import { getAgentAddress, signMessage } from "./wallet.js";
 import { listSkills, getSkill, fetchRegistry } from "./registry.js";
 import { routeTask } from "./router.js";
@@ -8,6 +9,7 @@ import { addLogEntry, getHistory } from "./logger.js";
 const app = express();
 // No CORS - all requests come through the backend proxy
 // The TEE network boundary provides access control
+app.use(helmet());
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -84,8 +86,7 @@ app.post("/task", async (req, res) => {
     });
   } catch (error) {
     console.error("Task execution error:", error);
-    const message = error instanceof Error ? error.message : "Internal server error";
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: "Task execution failed" });
   }
 });
 
@@ -119,6 +120,13 @@ app.get("/whoami", async (_req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// Global error handler — catches unhandled errors from async routes
+const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+};
+app.use(globalErrorHandler);
 
 // Start server
 app.listen(PORT, () => {

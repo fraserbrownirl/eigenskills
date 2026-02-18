@@ -1,7 +1,9 @@
 import "dotenv/config";
-import express from "express";
+import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { z } from "zod";
 import {
   verifySiwe,
   createSessionToken,
@@ -18,8 +20,35 @@ import {
   terminateAgent,
   getAppInfo,
   getAppLogs,
-  type EnvVar,
 } from "./eigencompute.js";
+
+// Request validation schemas
+const envVarSchema = z.object({
+  key: z
+    .string()
+    .min(1)
+    .regex(/^[A-Z][A-Z0-9_]*$/, "Key must be uppercase with underscores"),
+  value: z.string(),
+  isPublic: z.boolean(),
+});
+
+const deployRequestSchema = z.object({
+  name: z.string().min(1).max(64),
+  envVars: z.array(envVarSchema),
+});
+
+const upgradeRequestSchema = z.object({
+  envVars: z.array(envVarSchema),
+});
+
+const taskRequestSchema = z.object({
+  task: z.string().min(1),
+});
+
+const authVerifySchema = z.object({
+  message: z.string().min(1),
+  signature: z.string().min(1),
+});
 
 // Constants
 const JSON_BODY_LIMIT = "50kb";
@@ -32,6 +61,7 @@ const MAX_TASK_LENGTH = 10 * 1024; // 10KB
 const DEFAULT_LOG_LINES = 100;
 
 const app = express();
+app.use(helmet());
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(
   cors({
@@ -125,8 +155,7 @@ function handleRouteError(
   context: string
 ): void {
   console.error(`${context} error:`, error);
-  const message = error instanceof Error ? error.message : `${context} failed`;
-  res.status(500).json({ error: message });
+  res.status(500).json({ error: `${context} failed` });
 }
 
 // GET /api/auth/nonce — get a server-issued nonce for SIWE
@@ -138,12 +167,13 @@ app.get("/api/auth/nonce", authLimiter, (_req, res) => {
 // POST /api/auth/verify — verify SIWE signature, return session token
 app.post("/api/auth/verify", authLimiter, async (req, res) => {
   try {
-    const { message, signature } = req.body;
-    if (!message || !signature) {
-      res.status(400).json({ error: "Missing message or signature" });
+    const parsed = authVerifySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Missing or invalid message/signature" });
       return;
     }
 
+    const { message, signature } = parsed.data;
     const address = await verifySiwe(message, signature);
     ensureUser(address);
 
@@ -163,15 +193,13 @@ app.post("/api/auth/verify", authLimiter, async (req, res) => {
 app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
   try {
     const userAddress = getUserAddress(req);
-    const { envVars, name } = req.body as {
-      envVars: EnvVar[];
-      name: string;
-    };
-
-    if (!name || !envVars) {
-      res.status(400).json({ error: "Missing name or envVars" });
+    const parsed = deployRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
       return;
     }
+
+    const { name, envVars } = parsed.data;
 
     // Ensure user exists in DB (handles case where DB was reset)
     ensureUser(userAddress);
@@ -227,8 +255,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Deploy error:", error);
-    const message = error instanceof Error ? error.message : "Deployment failed";
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: "Deployment failed" });
   }
 });
 
@@ -236,8 +263,13 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
 app.post("/api/agents/upgrade", requireAuth, async (req, res) => {
   try {
     const userAddress = getUserAddress(req);
-    const { envVars } = req.body as { envVars: EnvVar[] };
+    const parsed = upgradeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
 
+    const { envVars } = parsed.data;
     const agent = getAgentByUser(userAddress);
     if (!agent?.app_id) {
       res.status(404).json({ error: "No active agent found" });
@@ -392,12 +424,13 @@ app.post("/api/agents/task", requireAuth, async (req, res) => {
       return;
     }
 
-    const { task } = req.body as { task: string };
-    if (!task || typeof task !== "string") {
+    const parsed = taskRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
       res.status(400).json({ error: "Missing or invalid 'task' field" });
       return;
     }
 
+    const { task } = parsed.data;
     if (task.length > MAX_TASK_LENGTH) {
       res.status(400).json({ error: `Task exceeds maximum length (${MAX_TASK_LENGTH / 1024}KB)` });
       return;
@@ -464,6 +497,13 @@ app.get("/api/agents/logs", requireAuth, async (req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
+
+// Global error handler — catches unhandled errors from async routes
+const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "Internal server error" });
+};
+app.use(globalErrorHandler);
 
 app.listen(PORT, () => {
   console.log(`EigenSkills Backend running on port ${PORT}`);

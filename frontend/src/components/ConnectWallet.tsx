@@ -107,9 +107,7 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
   }
 
   const chainName = chainId ? CHAIN_NAMES[chainId] || `Chain ${chainId}` : null;
-  const shortAddress = account
-    ? `${account.slice(0, 6)}...${account.slice(-4)}`
-    : null;
+  const shortAddress = account ? `${account.slice(0, 6)}...${account.slice(-4)}` : null;
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -118,12 +116,8 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
         <div className="mb-2 rounded-xl border border-zinc-700 bg-zinc-900/50 px-6 py-4 text-center">
           <p className="text-sm text-zinc-400">Connected</p>
           <p className="mt-1 font-mono text-lg text-white">{shortAddress}</p>
-          {chainName && (
-            <p className="mt-1 text-sm text-zinc-400">{chainName}</p>
-          )}
-          <p className="mt-3 text-xs text-zinc-500">
-            Change account or network in MetaMask
-          </p>
+          {chainName && <p className="mt-1 text-sm text-zinc-400">{chainName}</p>}
+          <p className="mt-3 text-xs text-zinc-500">Change account or network in MetaMask</p>
         </div>
       )}
 
@@ -137,7 +131,7 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
           {loading ? (
             <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
           ) : (
-            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none">
+            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path
                 d="M21 18V19C21 20.1 20.1 21 19 21H5C3.89 21 3 20.1 3 19V5C3 3.9 3.89 3 5 3H19C20.1 3 21 3.9 21 5V6H12C10.89 6 10 6.9 10 8V16C10 17.1 10.89 18 12 18H21ZM12 16H22V8H12V16ZM16 13.5C15.17 13.5 14.5 12.83 14.5 12C14.5 11.17 15.17 10.5 16 10.5C16.83 10.5 17.5 11.17 17.5 12C17.5 12.83 16.83 13.5 16 13.5Z"
                 fill="currentColor"
@@ -155,7 +149,14 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
           {loading ? (
             <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
           ) : (
-            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
               <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           )}

@@ -93,6 +93,12 @@ function buildEnvFile(envVars: EnvVar[]): string {
   return filepath;
 }
 
+interface ExecOptions {
+  encoding: "utf-8";
+  timeout: number;
+  env: NodeJS.ProcessEnv;
+}
+
 /**
  * Get exec options with environment variables for ecloud CLI.
  * The oclif-based ecloud CLI reads ECLOUD_PRIVATE_KEY for auth.
@@ -100,7 +106,7 @@ function buildEnvFile(envVars: EnvVar[]): string {
 function getExecOptions(
   timeoutMs: number = TIMEOUT_DEFAULT,
   extraEnv: Record<string, string> = {}
-) {
+): ExecOptions {
   return {
     encoding: "utf-8" as const,
     timeout: timeoutMs,
@@ -124,6 +130,38 @@ function execWithSanitizedErrors(command: string, options: Parameters<typeof exe
     const sanitized = message.replace(/--private-key\s+\S+/g, "--private-key [REDACTED]");
     throw new Error(sanitized, { cause: err });
   }
+}
+
+interface EcloudCommandOptions {
+  interactive?: boolean;
+  timeout?: number;
+  extraFlags?: string[];
+}
+
+/**
+ * Build and execute an ecloud CLI command with common options.
+ * - Adds --environment flag automatically
+ * - Pipes "echo N |" for interactive commands to auto-answer prompts
+ * - Sanitizes error output to prevent key leakage
+ */
+function runEcloudCommand(
+  subcommand: string,
+  appId: string | null,
+  options: EcloudCommandOptions = {}
+): string {
+  const { interactive = false, timeout = TIMEOUT_DEFAULT, extraFlags = [] } = options;
+
+  const parts = [`ecloud compute app ${subcommand}`];
+  if (appId) {
+    parts.push(appId);
+  }
+  parts.push(`--environment ${EIGENCOMPUTE_ENVIRONMENT}`);
+  parts.push(...extraFlags);
+
+  const command = parts.join(" ");
+  const fullCommand = interactive ? `echo N | ${command}` : command;
+
+  return execWithSanitizedErrors(fullCommand, getExecOptions(timeout));
 }
 
 /**
@@ -223,13 +261,7 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
   }
 
   try {
-    const command = [
-      "ecloud compute app info",
-      safeAppId,
-      `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-    ].join(" ");
-
-    const output = execWithSanitizedErrors(command, getExecOptions(TIMEOUT_INFO));
+    const output = runEcloudCommand("info", safeAppId, { timeout: TIMEOUT_INFO });
 
     // ecloud app info output format (example):
     //   IP:             203.0.113.45
@@ -268,15 +300,11 @@ export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<vo
   const envFilePath = buildEnvFile(envVars);
 
   try {
-    const command = [
-      "ecloud compute app upgrade",
-      safeAppId,
-      `--env-file ${envFilePath}`,
-      `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-      `--image-ref ${AGENT_IMAGE_REF}`,
-    ].join(" ");
-
-    execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(TIMEOUT_DEPLOY));
+    runEcloudCommand("upgrade", safeAppId, {
+      interactive: true,
+      timeout: TIMEOUT_DEPLOY,
+      extraFlags: [`--env-file ${envFilePath}`, `--image-ref ${AGENT_IMAGE_REF}`],
+    });
   } finally {
     try {
       unlinkSync(envFilePath);
@@ -291,13 +319,7 @@ export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<vo
  */
 export async function stopAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const command = [
-    "ecloud compute app stop",
-    safeAppId,
-    `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-  ].join(" ");
-
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
+  runEcloudCommand("stop", safeAppId, { interactive: true });
 }
 
 /**
@@ -305,13 +327,7 @@ export async function stopAgent(appId: string): Promise<void> {
  */
 export async function startAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const command = [
-    "ecloud compute app start",
-    safeAppId,
-    `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-  ].join(" ");
-
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
+  runEcloudCommand("start", safeAppId, { interactive: true });
 }
 
 /**
@@ -319,13 +335,7 @@ export async function startAgent(appId: string): Promise<void> {
  */
 export async function terminateAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const command = [
-    "ecloud compute app terminate",
-    safeAppId,
-    `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-  ].join(" ");
-
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
+  runEcloudCommand("terminate", safeAppId, { interactive: true });
 }
 
 /**
@@ -335,12 +345,8 @@ export async function getAppLogs(appId: string, lines: number = 100): Promise<st
   const safeAppId = validateShellInput(appId, "app ID");
   const safeLines = Math.min(Math.max(1, Math.floor(lines)), MAX_LOG_LINES);
 
-  const command = [
-    "ecloud compute app logs",
-    safeAppId,
-    `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-    `--tail ${safeLines}`,
-  ].join(" ");
-
-  return execWithSanitizedErrors(command, getExecOptions(TIMEOUT_INFO));
+  return runEcloudCommand("logs", safeAppId, {
+    timeout: TIMEOUT_INFO,
+    extraFlags: [`--tail ${safeLines}`],
+  });
 }

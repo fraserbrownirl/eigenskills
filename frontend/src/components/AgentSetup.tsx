@@ -1,12 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { deployAgent, type EnvVar } from "@/lib/api";
-import {
-  checkEigenAIGrant,
-  signEigenAIGrant,
-  getConnectedAccount,
-} from "@/lib/wallet";
+import { checkEigenAIGrant, signEigenAIGrant, getConnectedAccount } from "@/lib/wallet";
 
 interface AgentSetupProps {
   token: string;
@@ -27,8 +23,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Grant state
-  const [grantCredentials, setGrantCredentials] =
-    useState<GrantCredentials | null>(null);
+  const [grantCredentials, setGrantCredentials] = useState<GrantCredentials | null>(null);
   const [grantStatus, setGrantStatus] = useState<{
     checked: boolean;
     hasGrant: boolean;
@@ -37,14 +32,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
   const [signingGrant, setSigningGrant] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
-  // Check grant status when entering step 2
-  useEffect(() => {
-    if (step === 2 && !grantStatus.checked) {
-      checkGrant();
-    }
-  }, [step, grantStatus.checked]);
-
-  async function checkGrant() {
+  const checkGrant = useCallback(async () => {
     const address = await getConnectedAccount();
     if (!address) return;
 
@@ -55,7 +43,14 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
       hasGrant: status.hasGrant,
       tokenCount: status.tokenCount,
     });
-  }
+  }, []);
+
+  // Check grant status when entering step 2
+  useEffect(() => {
+    if (step === 2 && !grantStatus.checked) {
+      checkGrant();
+    }
+  }, [step, grantStatus.checked, checkGrant]);
 
   async function handleSignGrant() {
     if (!walletAddress) return;
@@ -64,17 +59,14 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
     setError(null);
 
     try {
-      const { grantMessage, grantSignature } =
-        await signEigenAIGrant(walletAddress);
+      const { grantMessage, grantSignature } = await signEigenAIGrant(walletAddress);
       setGrantCredentials({
         message: grantMessage,
         signature: grantSignature,
         walletAddress,
       });
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to sign grant message"
-      );
+      setError(err instanceof Error ? err.message : "Failed to sign grant message");
     } finally {
       setSigningGrant(false);
     }
@@ -88,14 +80,8 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
     setEnvVars(envVars.filter((_, i) => i !== index));
   }
 
-  function updateEnvVar(
-    index: number,
-    field: keyof EnvVar,
-    value: string | boolean
-  ) {
-    setEnvVars(
-      envVars.map((v, i) => (i === index ? { ...v, [field]: value } : v))
-    );
+  function updateEnvVar(index: number, field: keyof EnvVar, value: string | boolean) {
+    setEnvVars(envVars.map((v, i) => (i === index ? { ...v, [field]: value } : v)));
   }
 
   async function handleDeploy() {
@@ -145,18 +131,14 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
           <div key={s} className="flex items-center gap-2">
             <div
               className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                s <= step
-                  ? "bg-white text-zinc-900"
-                  : "bg-zinc-800 text-zinc-500"
+                s <= step ? "bg-white text-zinc-900" : "bg-zinc-800 text-zinc-500"
               }`}
             >
               {s}
             </div>
             {s < totalSteps && (
               <div
-                className={`h-px w-8 transition-colors ${
-                  s < step ? "bg-white" : "bg-zinc-800"
-                }`}
+                className={`h-px w-8 transition-colors ${s < step ? "bg-white" : "bg-zinc-800"}`}
               />
             )}
           </div>
@@ -172,7 +154,11 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               Give your agent a display name. This is just for your reference.
             </p>
           </div>
+          <label htmlFor="agent-name" className="sr-only">
+            Agent name
+          </label>
           <input
+            id="agent-name"
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -195,8 +181,8 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
           <div>
             <h2 className="text-2xl font-bold text-white">Authorize EigenAI</h2>
             <p className="mt-2 text-zinc-400">
-              Sign a message to let your agent use your EigenAI grant. This
-              avoids needing a separate grant for each agent.
+              Sign a message to let your agent use your EigenAI grant. This avoids needing a
+              separate grant for each agent.
             </p>
           </div>
 
@@ -211,22 +197,17 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               <>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-emerald-400" />
-                  <span className="text-emerald-400 font-medium">
-                    Grant active
-                  </span>
+                  <span className="text-emerald-400 font-medium">Grant active</span>
                 </div>
                 <p className="text-sm text-zinc-400">
-                  Your wallet has {grantStatus.tokenCount.toLocaleString()}{" "}
-                  tokens available.
+                  Your wallet has {grantStatus.tokenCount.toLocaleString()} tokens available.
                 </p>
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full bg-amber-400" />
-                  <span className="text-amber-400 font-medium">
-                    No grant found
-                  </span>
+                  <span className="text-amber-400 font-medium">No grant found</span>
                 </div>
                 <p className="text-sm text-zinc-400">
                   Your wallet doesn&apos;t have an EigenAI grant.{" "}
@@ -255,19 +236,17 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
+                    aria-hidden="true"
                   >
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
-                  <span className="text-emerald-400 font-medium">
-                    Grant authorized
-                  </span>
+                  <span className="text-emerald-400 font-medium">Grant authorized</span>
                 </div>
               ) : (
                 <>
                   <p className="text-sm text-zinc-400 mb-4">
-                    Sign a message to authorize your agent to use your grant.
-                    This signature is encrypted and only accessible inside the
-                    TEE.
+                    Sign a message to authorize your agent to use your grant. This signature is
+                    encrypted and only accessible inside the TEE.
                   </p>
                   <button
                     onClick={handleSignGrant}
@@ -309,9 +288,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               disabled={grantStatus.hasGrant && !grantCredentials}
               className="flex-1 rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
             >
-              {grantStatus.hasGrant && !grantCredentials
-                ? "Sign to continue"
-                : "Continue"}
+              {grantStatus.hasGrant && !grantCredentials ? "Sign to continue" : "Continue"}
             </button>
           </div>
         </div>
@@ -321,13 +298,10 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
       {step === 3 && (
         <div className="space-y-6">
           <div>
-            <h2 className="text-2xl font-bold text-white">
-              Configure environment variables
-            </h2>
+            <h2 className="text-2xl font-bold text-white">Configure environment variables</h2>
             <p className="mt-2 text-zinc-400">
-              Add your API keys and configuration. Encrypted variables are only
-              accessible inside your agent&apos;s TEE. Public variables appear
-              on the Verifiability Dashboard.
+              Add your API keys and configuration. Encrypted variables are only accessible inside
+              your agent&apos;s TEE. Public variables appear on the Verifiability Dashboard.
             </p>
           </div>
 
@@ -338,14 +312,22 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                 className="flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3"
               >
                 <div className="flex-1 space-y-2">
+                  <label htmlFor={`env-key-${i}`} className="sr-only">
+                    Environment variable key
+                  </label>
                   <input
+                    id={`env-key-${i}`}
                     type="text"
                     value={envVar.key}
                     onChange={(e) => updateEnvVar(i, "key", e.target.value)}
                     placeholder="KEY_NAME"
                     className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-white placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
                   />
+                  <label htmlFor={`env-value-${i}`} className="sr-only">
+                    Environment variable value
+                  </label>
                   <input
+                    id={`env-value-${i}`}
                     type="password"
                     value={envVar.value}
                     onChange={(e) => updateEnvVar(i, "value", e.target.value)}
@@ -356,9 +338,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                     <input
                       type="checkbox"
                       checked={envVar.isPublic}
-                      onChange={(e) =>
-                        updateEnvVar(i, "isPublic", e.target.checked)
-                      }
+                      onChange={(e) => updateEnvVar(i, "isPublic", e.target.checked)}
                       className="rounded border-zinc-600"
                     />
                     Make public (visible on Verifiability Dashboard)
@@ -367,6 +347,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                 <button
                   onClick={() => removeEnvVar(i)}
                   className="mt-1 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
+                  aria-label="Remove environment variable"
                 >
                   <svg
                     className="h-4 w-4"
@@ -374,6 +355,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                     fill="none"
                     stroke="currentColor"
                     strokeWidth="2"
+                    aria-hidden="true"
                   >
                     <path d="M18 6L6 18M6 6l12 12" />
                   </svg>
@@ -392,6 +374,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
+              aria-hidden="true"
             >
               <path d="M12 5v14M5 12h14" />
             </svg>
@@ -434,20 +417,14 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               <span className="text-sm text-zinc-500">EigenAI Authorization</span>
               <p className="text-white">
                 {grantCredentials ? (
-                  <span className="text-emerald-400">
-                    Using your wallet grant
-                  </span>
+                  <span className="text-emerald-400">Using your wallet grant</span>
                 ) : (
-                  <span className="text-amber-400">
-                    Will need separate grant activation
-                  </span>
+                  <span className="text-amber-400">Will need separate grant activation</span>
                 )}
               </p>
             </div>
             <div>
-              <span className="text-sm text-zinc-500">
-                Environment variables
-              </span>
+              <span className="text-sm text-zinc-500">Environment variables</span>
               <p className="text-white">
                 {envVars.filter((v) => v.key).length} custom (
                 {envVars.filter((v) => v.isPublic).length} public,{" "}

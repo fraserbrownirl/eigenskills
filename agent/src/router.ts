@@ -1,9 +1,39 @@
 import type { Skill } from "./registry.js";
 import { getAgentAddress, signMessage } from "./wallet.js";
 
-const GRANT_API =
-  process.env.EIGENAI_GRANT_API ?? "https://determinal-api.eigenarcade.com";
+const GRANT_API = process.env.EIGENAI_GRANT_API ?? "https://determinal-api.eigenarcade.com";
 const MODEL = "gpt-oss-120b-f16";
+const MAX_TOKENS = 500;
+const SEED = 42;
+
+interface GrantMessageResponse {
+  message: string;
+}
+
+interface CheckGrantResponse {
+  hasGrant?: boolean;
+  tokenCount?: number;
+}
+
+interface ChatToolCall {
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+interface ChatChoice {
+  message: {
+    role: string;
+    content: string | null;
+    tool_calls?: ChatToolCall[];
+  };
+}
+
+interface ChatCompletionResponse {
+  signature?: string;
+  choices?: ChatChoice[];
+}
 
 // Cached grant credentials (message + signature + walletAddress)
 let cachedGrant: {
@@ -58,12 +88,10 @@ async function getGrantAuth(): Promise<{
 
   if (!messageRes.ok) {
     const errorText = await messageRes.text();
-    throw new Error(
-      `Failed to get grant message: ${messageRes.status} ${errorText}`
-    );
+    throw new Error(`Failed to get grant message: ${messageRes.status} ${errorText}`);
   }
 
-  const { message } = await messageRes.json();
+  const { message } = (await messageRes.json()) as GrantMessageResponse;
   console.log("Signing grant message with TEE wallet...");
   const signature = await signMessage(message);
 
@@ -87,7 +115,7 @@ export async function checkGrantStatus(): Promise<{
   if (!res.ok) {
     return { hasGrant: false, tokenCount: 0, walletAddress: address };
   }
-  const data = await res.json();
+  const data = (await res.json()) as CheckGrantResponse;
   return {
     hasGrant: data.hasGrant ?? false,
     tokenCount: data.tokenCount ?? 0,
@@ -111,9 +139,7 @@ export async function routeTask(
   const grant = await getGrantAuth();
   const walletAddress = grant.walletAddress;
 
-  const skillList = availableSkills
-    .map((s) => `- ${s.id}: ${s.description}`)
-    .join("\n");
+  const skillList = availableSkills.map((s) => `- ${s.id}: ${s.description}`).join("\n");
 
   const systemPrompt = `You are a skill router. Given a user's task and a list of available skills, select the best skill(s) to execute. Use the select_skills tool to return your selection.
 
@@ -127,8 +153,8 @@ ${skillList}`;
 
   const body = {
     model: MODEL,
-    seed: 42,
-    max_tokens: 500,
+    seed: SEED,
+    max_tokens: MAX_TOKENS,
     messages,
     // Grant authentication fields
     grantMessage: grant.message,
@@ -140,8 +166,7 @@ ${skillList}`;
         type: "function" as const,
         function: {
           name: "select_skills",
-          description:
-            "Select one or more skills to execute for this task, in order",
+          description: "Select one or more skills to execute for this task, in order",
           parameters: {
             type: "object",
             properties: {
@@ -181,26 +206,27 @@ ${skillList}`;
     throw new Error(`EigenAI request failed: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as ChatCompletionResponse;
   const signature: string = data.signature ?? "";
   const choice = data.choices?.[0];
 
   let skillIds: string[] = [];
 
-  if (choice?.message?.tool_calls?.length > 0) {
-    const toolCall = choice.message.tool_calls[0];
+  const toolCalls = choice?.message?.tool_calls;
+  const content = choice?.message?.content;
+
+  if (toolCalls && toolCalls.length > 0) {
+    const toolCall = toolCalls[0];
     try {
-      const args = JSON.parse(toolCall.function.arguments);
+      const args = JSON.parse(toolCall.function.arguments) as { skill_ids?: string[] };
       skillIds = args.skill_ids ?? [];
-    } catch {
-      console.error("Failed to parse tool call arguments:", toolCall.function.arguments);
+    } catch (err) {
+      console.error("Failed to parse tool call arguments:", toolCall.function.arguments, err);
     }
-  } else if (choice?.message?.content) {
+  } else if (content) {
     // Fallback: try to extract skill IDs from free text
     const validIds = new Set(availableSkills.map((s) => s.id));
-    skillIds = Array.from(validIds).filter((id) =>
-      choice.message.content.includes(id)
-    );
+    skillIds = Array.from(validIds).filter((id) => content.includes(id));
   }
 
   // Validate that returned skill IDs actually exist

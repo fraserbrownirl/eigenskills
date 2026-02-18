@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+*.test.ts
+*.test.js
+.env*
+README.md
+.eslintrc*
+.prettierrc*
+tsconfig.tsbuildinfo
+coverage
+.vscode
+.idea
+*.swp
+*.log

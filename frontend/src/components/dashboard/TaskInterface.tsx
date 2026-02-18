@@ -37,7 +37,11 @@ export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps)
       </p>
 
       <div className="mt-4 flex gap-3">
+        <label htmlFor="task-input" className="sr-only">
+          Task to submit to agent
+        </label>
         <input
+          id="task-input"
           type="text"
           value={taskInput}
           onChange={(e) => setTaskInput(e.target.value)}

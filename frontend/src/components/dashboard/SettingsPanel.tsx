@@ -50,14 +50,22 @@ export function SettingsPanel({ token, onCancel, onSaved, onError }: SettingsPan
       <div className="mt-4 space-y-3">
         {envVars.map((envVar, idx) => (
           <div key={idx} className="flex gap-2">
+            <label htmlFor={`settings-key-${idx}`} className="sr-only">
+              Environment variable key
+            </label>
             <input
+              id={`settings-key-${idx}`}
               type="text"
               value={envVar.key}
               onChange={(e) => handleEnvVarChange(idx, "key", e.target.value.toUpperCase())}
               placeholder="KEY_NAME"
               className="w-40 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-white placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
             />
+            <label htmlFor={`settings-value-${idx}`} className="sr-only">
+              Environment variable value
+            </label>
             <input
+              id={`settings-value-${idx}`}
               type="password"
               value={envVar.value}
               onChange={(e) => handleEnvVarChange(idx, "value", e.target.value)}
