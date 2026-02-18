@@ -1,5 +1,4 @@
 import express from "express";
-import cors from "cors";
 import { getAgentAddress, signMessage } from "./wallet.js";
 import { listSkills, getSkill, fetchRegistry } from "./registry.js";
 import { routeTask } from "./router.js";
@@ -7,7 +6,8 @@ import { executeSkill } from "./executor.js";
 import { addLogEntry, getHistory } from "./logger.js";
 
 const app = express();
-app.use(cors());
+// No CORS - all requests come through the backend proxy
+// The TEE network boundary provides access control
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
@@ -38,9 +38,7 @@ app.post("/task", async (req, res) => {
     });
 
     if (routing.skillIds.length === 0) {
-      res
-        .status(404)
-        .json({ error: "No suitable skill found for this task" });
+      res.status(404).json({ error: "No suitable skill found for this task" });
       return;
     }
 
@@ -58,7 +56,8 @@ app.post("/task", async (req, res) => {
         contentHash: skill.contentHash,
       });
 
-      const result = await executeSkill(skillId, task);
+      // Pass expected content hash for verification (ensures skill hasn't been tampered with)
+      const result = await executeSkill(skillId, task, skill.contentHash);
       results.push(result);
 
       await addLogEntry("skill_completed", {
@@ -85,8 +84,7 @@ app.post("/task", async (req, res) => {
     });
   } catch (error) {
     console.error("Task execution error:", error);
-    const message =
-      error instanceof Error ? error.message : "Internal server error";
+    const message = error instanceof Error ? error.message : "Internal server error";
     res.status(500).json({ error: message });
   }
 });
@@ -126,12 +124,8 @@ app.get("/health", (_req, res) => {
 app.listen(PORT, () => {
   console.log(`EigenSkills Agent running on port ${PORT}`);
   console.log(`Agent address: ${getAgentAddress()}`);
-  console.log(
-    `Network: ${process.env.NETWORK_PUBLIC ?? "not set"}`
-  );
+  console.log(`Network: ${process.env.NETWORK_PUBLIC ?? "not set"}`);
 
   // Pre-fetch the registry on startup
-  fetchRegistry().catch((err) =>
-    console.error("Failed to pre-fetch registry:", err)
-  );
+  fetchRegistry().catch((err) => console.error("Failed to pre-fetch registry:", err));
 });

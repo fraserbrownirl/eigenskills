@@ -1,0 +1,100 @@
+---
+description: Frontend internals — component hierarchy, state management, API client
+globs: frontend/**
+alwaysApply: false
+---
+
+# Frontend Component
+
+## Component Hierarchy
+
+```
+app/page.tsx
+    ├── (not connected) → ConnectWallet
+    ├── (connected, no token) → ConnectWallet [shows Sign In]
+    ├── (token, no agent) → AgentSetup
+    └── (token + agent) → Dashboard
+```
+
+All views are conditional renders in `page.tsx`. No Next.js routing between views.
+
+## State Management
+
+All state lives in `page.tsx` and is passed as props:
+
+| State | Type | Persisted | Description |
+|-------|------|-----------|-------------|
+| `address` | string | No | Connected wallet address |
+| `chainId` | number | No | Current chain ID |
+| `token` | string | No | SIWE session token |
+| `agent` | Agent | No | Current agent data |
+
+**No persistence** — all state is lost on page refresh. No localStorage, no cookies.
+
+## Component Details
+
+### ConnectWallet
+- Detects MetaMask via `window.ethereum`
+- Handles `accountsChanged` and `chainChanged` events
+- Creates SIWE message with `createSiweMessage()` from `lib/wallet.ts`
+- Calls `verifyAuth()` on successful sign
+
+### AgentSetup (4-step wizard)
+
+| Step | Collects | Validation |
+|------|----------|------------|
+| 1. Name | `agentName` | Non-empty string |
+| 2. EigenAI Grant | Grant signature | Checks grant status, prompts signing |
+| 3. Env Vars | `envVars[]` | Key/value pairs with `isPublic` flag |
+| 4. Review | — | Shows summary, deploy button |
+
+Grant credentials (`EIGENAI_GRANT_MESSAGE`, `EIGENAI_GRANT_SIGNATURE`, `EIGENAI_WALLET_ADDRESS`) are added to env vars automatically.
+
+### Dashboard
+- Polls `/api/agents/info` every 5s (deploying) or 15s (running)
+- Shows agent status, wallet addresses, instance IP, docker digest
+- Controls: Stop, Start, Terminate (with confirmation modal)
+- Task input: textarea + submit → `submitTask()` → displays result with signatures
+
+## API Client (`lib/api.ts`)
+
+All functions return typed responses. Token passed via `Authorization: Bearer` header.
+
+| Function | Endpoint | Notes |
+|----------|----------|-------|
+| `verifyAuth(message, signature)` | POST `/api/auth/verify` | Returns `{ token, address, agent? }` |
+| `deployAgent(token, name, envVars)` | POST `/api/agents/deploy` | Returns `{ agent }` |
+| `upgradeAgent(token, envVars)` | POST `/api/agents/upgrade` | Not called from UI currently |
+| `stopAgent(token)` | POST `/api/agents/stop` | — |
+| `startAgent(token)` | POST `/api/agents/start` | — |
+| `terminateAgent(token)` | POST `/api/agents/terminate` | — |
+| `getAgentInfo(token)` | GET `/api/agents/info` | — |
+| `submitTask(token, task)` | POST `/api/agents/task` | Returns `{ result, skills, signatures }` |
+
+## Wallet Helpers (`lib/wallet.ts`)
+
+| Function | Purpose |
+|----------|---------|
+| `connectWallet()` | Requests MetaMask accounts |
+| `getChainId()` | Returns current chain ID |
+| `createSiweMessage(address, chainId)` | Builds SIWE message with client-generated nonce |
+| `signSiweMessage(message)` | Signs via `personal_sign` |
+| `checkGrantStatus(address)` | Calls EigenArcade API to check grant |
+| `signGrantMessage(message)` | Signs grant authorization message |
+
+## Styling
+
+- Tailwind v4 with `@tailwindcss/postcss`
+- Dark theme: `bg-zinc-950`, `text-zinc-100`
+- Geist font family (Sans + Mono)
+
+## Common Edits
+
+| Task | File | Section |
+|------|------|---------|
+| Add new view/page | `app/page.tsx` | Add conditional render + state |
+| Add new component | `components/` | Create file, import in page.tsx |
+| Add API method | `lib/api.ts` | Add typed function |
+| Change wallet logic | `lib/wallet.ts` | Relevant helper function |
+| Add session persistence | `app/page.tsx` | Add localStorage/cookie read/write |
+| Change polling interval | `components/Dashboard.tsx` | `POLL_INTERVAL_*` constants |

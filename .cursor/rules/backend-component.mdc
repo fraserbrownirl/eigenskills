@@ -1,0 +1,111 @@
+---
+description: Backend internals — API routes, SIWE auth, EigenCompute CLI, database
+globs: backend/**
+alwaysApply: false
+---
+
+# Backend Component
+
+## API Routes
+
+All routes except `/api/auth/verify` require `Authorization: Bearer <token>` header.
+
+| Method | Path | Auth | Handler Location |
+|--------|------|------|------------------|
+| POST | `/api/auth/verify` | No | `index.ts` — verifies SIWE, issues token |
+| POST | `/api/agents/deploy` | Yes | `index.ts` — calls `eigencompute.deployApp()` |
+| POST | `/api/agents/upgrade` | Yes | `index.ts` — calls `eigencompute.upgradeApp()` |
+| POST | `/api/agents/stop` | Yes | `index.ts` — calls `eigencompute.stopApp()` |
+| POST | `/api/agents/start` | Yes | `index.ts` — calls `eigencompute.startApp()` |
+| POST | `/api/agents/terminate` | Yes | `index.ts` — calls `eigencompute.terminateApp()` |
+| GET | `/api/agents/info` | Yes | `index.ts` — returns agent from DB + lazy-fetches IP |
+| POST | `/api/agents/task` | Yes | `index.ts` — proxies to `http://{instanceIp}:3000/task` |
+
+## SIWE Auth Flow
+
+```
+Frontend                           Backend
+   |                                  |
+   |-- signSiweMessage() ------------>|
+   |   (address, chainId, nonce)      |
+   |                                  |
+   |-- POST /api/auth/verify -------->|
+   |   { message, signature }         |-- verifySiweMessage()
+   |                                  |-- createUser() if new
+   |                                  |-- createToken(address)
+   |<-- { token, address, agent? } ---|
+   |                                  |
+   |-- Bearer token on all requests ->|-- requireAuth middleware
+   |                                  |-- verifyToken() [HMAC, timing-safe]
+```
+
+### Token Format
+`base64(address:expiresAt:hmac)` — 24-hour TTL, HMAC-SHA256 with `TOKEN_SECRET`.
+
+### Security Notes
+- `verifyToken()` uses timing-safe comparison to prevent timing attacks
+- Nonce is currently client-generated (should be server-issued in production)
+
+## EigenCompute CLI Integration (`eigencompute.ts`)
+
+### Shell Pattern
+```typescript
+execSync(`echo N | ecloud compute app ${command} ${flags}`, {
+  env: { ...process.env, EIGENCOMPUTE_PRIVATE_KEY }
+});
+```
+- `echo N |` handles interactive prompts in non-interactive mode
+- Private key passed via env var, not command line
+
+### Error Sanitization
+All `execSync` errors are caught and sanitized to remove private keys:
+```typescript
+message.replace(/0x[a-fA-F0-9]{64}/g, '[REDACTED]')
+```
+
+### Caching
+`getAppInfo()` caches results for 30s (success) or 60s cooldown (failure) to avoid hammering the CLI.
+
+### Env File Construction
+Builds `.env` file with `_PUBLIC` suffix convention:
+- `KEY_PUBLIC=value` → visible on-chain
+- `KEY=value` → KMS-encrypted, only decrypted in TEE
+
+## Database Schema (`db.ts`)
+
+SQLite with WAL mode. Two tables:
+
+**users**
+| Column | Type | Description |
+|--------|------|-------------|
+| address | TEXT PK | Ethereum address (lowercase) |
+| created_at | TEXT | ISO timestamp |
+
+**agents**
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| user_address | TEXT FK | Owner's address |
+| app_id | TEXT | EigenCompute app ID |
+| ecloud_name | TEXT | EigenCompute app name |
+| name | TEXT | User-provided name |
+| wallet_address_eth | TEXT | Agent's ETH address |
+| wallet_address_sol | TEXT | Agent's Solana address |
+| instance_ip | TEXT | TEE instance IP (nullable) |
+| status | TEXT | deploying/running/stopped/terminated |
+| docker_digest | TEXT | Image digest |
+| created_at, updated_at | TEXT | Timestamps |
+
+### Key Queries
+- `getAgentByUser(address)` — returns most recent non-terminated agent
+- `updateAgent(id, fields)` — partial update, auto-sets `updated_at`
+
+## Common Edits
+
+| Task | File | Function/Section |
+|------|------|------------------|
+| Add new API route | `index.ts` | Add `app.get/post()`, use `requireAuth` if needed |
+| Change token TTL | `auth.ts` | `TOKEN_TTL_MS` constant |
+| Add database column | `db.ts` | Add migration in `initDb()`, update interfaces |
+| Change CLI flags | `eigencompute.ts` | Relevant `*App()` function |
+| Add env var to deploy | `eigencompute.ts` | `buildEnvFile()` function |

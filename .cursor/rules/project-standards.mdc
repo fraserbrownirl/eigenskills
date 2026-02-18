@@ -5,6 +5,11 @@ alwaysApply: true
 
 # EigenSkills Project Standards
 
+## First Steps for New Conversations
+
+Before exploring the codebase, read `AGENTS.md` at the project root.
+It contains the complete file map, API contracts, and implementation status.
+
 ## Architecture
 
 Three components:

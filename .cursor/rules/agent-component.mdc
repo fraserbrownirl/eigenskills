@@ -1,0 +1,87 @@
+---
+description: Agent container internals — data flow, patterns, dev mode behavior
+globs: agent/**
+alwaysApply: false
+---
+
+# Agent Component
+
+## Internal Data Flow
+
+```
+POST /task
+    ↓
+index.ts (validates request)
+    ↓
+registry.ts → listSkills() [filtered by available env vars]
+    ↓
+router.ts → routeTask() [EigenAI tool call with grant auth]
+    ↓
+executor.ts → executeSkill() [sandboxed subprocess]
+    ↓
+logger.ts → log() [sign with TEE wallet]
+    ↓
+response (result + signatures)
+```
+
+## Key Patterns
+
+### Grant Auth Retry Logic (`router.ts`)
+The router caches grant credentials. On 401/403 from EigenAI:
+1. Clears cached credentials
+2. Re-fetches grant message from `EIGENAI_GRANT_API`
+3. Signs with TEE wallet (or uses user-provided grant)
+4. Retries the request once
+
+### Sandboxed Env Construction (`executor.ts`)
+Skills only receive env vars they declare in `requires_env`:
+```typescript
+const env = { PATH, HOME, LANG };
+for (const key of skill.requiresEnv) {
+  if (process.env[key]) env[key] = process.env[key];
+}
+```
+No other process env vars leak to the subprocess.
+
+### SKILL.md Frontmatter Parsing
+Uses `gray-matter` to parse YAML frontmatter. Required fields: `name`, `description`, `version`, `author`. Optional: `requires_env`, `execution`, `dependencies`.
+
+### Tool Calling for Skill Selection (`router.ts`)
+Sends a `select_skills` tool definition to EigenAI:
+```typescript
+tools: [{
+  type: 'function',
+  function: {
+    name: 'select_skills',
+    parameters: { skillIds: { type: 'array', items: { type: 'string' } } }
+  }
+}]
+```
+Falls back to regex extraction from free-text if tool calling isn't used.
+
+## Dev Mode Behavior
+
+| Condition | Behavior |
+|-----------|----------|
+| No `MNEMONIC` env var | `wallet.ts` returns zero-address, `signMessage()` returns dummy sig |
+| `SKILL_REGISTRY_LOCAL` set | `executor.ts` copies from local path instead of git sparse-checkout |
+| Missing `EIGENAI_GRANT_*` vars | Router attempts TEE wallet grant, will fail without valid MNEMONIC |
+
+## Execution Pipeline Details
+
+1. **Skill fetch**: Git sparse-checkout from registry repo, or local copy if `SKILL_REGISTRY_LOCAL`
+2. **Manifest parse**: Read `SKILL.md`, extract `execution` steps from frontmatter
+3. **Template substitution**: Replace `{{input}}` with JSON-stringified user input, `{{output}}` with temp file path
+4. **Run commands**: `execSync` with 30s timeout, 1MB buffer, restricted env
+5. **Capture output**: stdout from last command, or file contents if `{{output}}` was used
+
+## Common Edits
+
+| Task | File | Function/Section |
+|------|------|------------------|
+| Add new endpoint | `index.ts` | Add `app.get/post()` handler |
+| Change routing prompt | `router.ts` | `routeTask()` system/user messages |
+| Change tool definition | `router.ts` | `tools` array in `routeTask()` |
+| Add env var to sandbox | `executor.ts` | `buildSandboxEnv()` |
+| Change execution timeout | `executor.ts` | `EXEC_TIMEOUT_MS` constant |
+| Change log format | `logger.ts` | `LogEntry` interface, `log()` function |

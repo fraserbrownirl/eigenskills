@@ -32,6 +32,17 @@ function getHeaders(token: string): HeadersInit {
   };
 }
 
+/**
+ * Fetch a server-issued nonce for SIWE authentication.
+ * The nonce is valid for 5 minutes and can only be used once.
+ */
+export async function fetchNonce(): Promise<string> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/nonce`);
+  if (!res.ok) throw new Error("Failed to fetch nonce");
+  const { nonce } = await res.json();
+  return nonce;
+}
+
 export async function verifyAuth(
   message: string,
   signature: string
@@ -62,10 +73,7 @@ export async function deployAgent(
   return res.json();
 }
 
-export async function upgradeAgent(
-  token: string,
-  envVars: EnvVar[]
-): Promise<void> {
+export async function upgradeAgent(token: string, envVars: EnvVar[]): Promise<void> {
   const res = await fetch(`${BACKEND_URL}/api/agents/upgrade`, {
     method: "POST",
     headers: getHeaders(token),
@@ -98,9 +106,7 @@ export async function terminateAgent(token: string): Promise<void> {
   if (!res.ok) throw new Error("Terminate failed");
 }
 
-export async function getAgentInfo(
-  token: string
-): Promise<AgentInfo | null> {
+export async function getAgentInfo(token: string): Promise<AgentInfo | null> {
   const res = await fetch(`${BACKEND_URL}/api/agents/info`, {
     headers: getHeaders(token),
   });
@@ -109,10 +115,7 @@ export async function getAgentInfo(
   return res.json();
 }
 
-export async function submitTask(
-  token: string,
-  task: string
-): Promise<TaskResult> {
+export async function submitTask(token: string, task: string): Promise<TaskResult> {
   const res = await fetch(`${BACKEND_URL}/api/agents/task`, {
     method: "POST",
     headers: getHeaders(token),
@@ -123,4 +126,49 @@ export async function submitTask(
     throw new Error(err.error ?? "Task submission failed");
   }
   return res.json();
+}
+
+export interface Skill {
+  id: string;
+  description: string;
+  version: string;
+  author: string;
+  contentHash: string;
+  requiresEnv: string[];
+  hasExecutionManifest: boolean;
+}
+
+export async function getSkills(token: string): Promise<Skill[]> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/skills`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.skills ?? [];
+}
+
+export interface HistoryEntry {
+  timestamp: string;
+  type: string;
+  data: Record<string, unknown>;
+  agentAddress: string;
+  signature: string;
+}
+
+export async function getHistory(token: string): Promise<HistoryEntry[]> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/history`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries ?? [];
+}
+
+export async function getLogs(token: string, lines: number = 100): Promise<string> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/logs?lines=${lines}`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return "";
+  const data = await res.json();
+  return data.logs ?? "";
 }

@@ -1,5 +1,6 @@
 import { BrowserProvider, getAddress } from "ethers";
 import { SiweMessage } from "siwe";
+import { fetchNonce } from "./api";
 
 declare global {
   interface Window {
@@ -81,6 +82,9 @@ export async function signSiweMessage(address: string): Promise<{
   const signer = await provider.getSigner();
   const chainId = (await provider.getNetwork()).chainId;
 
+  // Fetch server-issued nonce to prevent replay attacks
+  const nonce = await fetchNonce();
+
   const siweMessage = new SiweMessage({
     domain: window.location.host,
     address,
@@ -88,7 +92,7 @@ export async function signSiweMessage(address: string): Promise<{
     uri: window.location.origin,
     version: "1",
     chainId: Number(chainId),
-    nonce: Math.random().toString(36).slice(2),
+    nonce,
     issuedAt: new Date().toISOString(),
   });
 

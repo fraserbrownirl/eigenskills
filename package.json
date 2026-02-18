@@ -1,0 +1,41 @@
+{
+  "name": "eigenskills-v2",
+  "version": "0.1.0",
+  "description": "A verifiable agent platform built on EigenCompute",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "lint": "npm run lint -w backend -w agent && npm run lint -w frontend",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run test -w backend -w agent"
+  },
+  "workspaces": [
+    "agent",
+    "backend",
+    "frontend"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/38d3b7/eigenskills-v2.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7"
+  },
+  "lint-staged": {
+    "backend/src/**/*.ts": [
+      "eslint --fix --config backend/eslint.config.mjs",
+      "prettier --write"
+    ],
+    "agent/src/**/*.ts": [
+      "eslint --fix --config agent/eslint.config.mjs",
+      "prettier --write"
+    ],
+    "frontend/src/**/*.{ts,tsx}": [
+      "eslint --fix --config frontend/eslint.config.mjs",
+      "prettier --write"
+    ]
+  }
+}

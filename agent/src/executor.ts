@@ -1,6 +1,15 @@
 import { execSync } from "child_process";
-import { readFileSync, mkdirSync, existsSync, cpSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+  cpSync,
+  unlinkSync,
+  readdirSync,
+} from "fs";
 import { join, resolve } from "path";
+import { createHash } from "crypto";
 import matter from "gray-matter";
 
 const SKILLS_CACHE_DIR = "/tmp/eigenskills";
@@ -10,8 +19,14 @@ const LOCAL_REGISTRY_PATH = process.env.SKILL_REGISTRY_LOCAL;
 
 // Remote registry for production
 const REGISTRY_REPO =
-  process.env.SKILL_REGISTRY_REPO ??
-  "https://github.com/38d3b7/eigenskills.git";
+  process.env.SKILL_REGISTRY_REPO ?? "https://github.com/38d3b7/eigenskills.git";
+
+// Execution limits
+const EXEC_TIMEOUT_MS = 30_000;
+const EXEC_MAX_BUFFER = 1024 * 1024; // 1MB
+
+// File permissions
+const SECURE_FILE_MODE = 0o600;
 
 const SAFE_SKILL_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/;
 
@@ -22,6 +37,43 @@ function validateSkillId(id: string): string {
     );
   }
   return id;
+}
+
+/**
+ * Recursively list all files in a directory.
+ */
+function listFilesRecursively(dir: string, baseDir: string = dir): string[] {
+  const files: string[] = [];
+  const entries = readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listFilesRecursively(fullPath, baseDir));
+    } else {
+      // Store relative path from base directory
+      files.push(fullPath.slice(baseDir.length + 1));
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Compute SHA-256 content hash of a skill folder.
+ * Files are sorted alphabetically and concatenated to ensure deterministic hash.
+ */
+function computeContentHash(skillDir: string): string {
+  const files = listFilesRecursively(skillDir).sort();
+  const hash = createHash("sha256");
+
+  for (const relPath of files) {
+    const content = readFileSync(join(skillDir, relPath), "utf-8");
+    // Include filename in hash to detect renames
+    hash.update(`${relPath}\n${content}\n`);
+  }
+
+  return hash.digest("hex");
 }
 
 export interface ExecutionStep {
@@ -57,9 +109,7 @@ function fetchSkillFolder(skillId: string): string {
   if (LOCAL_REGISTRY_PATH) {
     const localSkillPath = resolve(LOCAL_REGISTRY_PATH, skillId);
     if (!existsSync(localSkillPath)) {
-      throw new Error(
-        `Skill "${skillId}" not found in local registry at ${localSkillPath}`
-      );
+      throw new Error(`Skill "${skillId}" not found in local registry at ${localSkillPath}`);
     }
     cpSync(localSkillPath, skillDir, { recursive: true });
     return skillDir;
@@ -68,16 +118,14 @@ function fetchSkillFolder(skillId: string): string {
   // Production mode: clone from git
   const repoDir = join(SKILLS_CACHE_DIR, "_repo");
   if (!existsSync(repoDir)) {
-    execSync(
-      `git clone --depth 1 --filter=blob:none --sparse "${REGISTRY_REPO}" "${repoDir}"`,
-      { stdio: "pipe" }
-    );
+    execSync(`git clone --depth 1 --filter=blob:none --sparse "${REGISTRY_REPO}" "${repoDir}"`, {
+      stdio: "pipe",
+    });
   }
 
-  execSync(
-    `cd "${repoDir}" && git sparse-checkout add "registry/skills/${skillId}"`,
-    { stdio: "pipe" }
-  );
+  execSync(`cd "${repoDir}" && git sparse-checkout add "registry/skills/${skillId}"`, {
+    stdio: "pipe",
+  });
 
   const sourcePath = join(repoDir, "registry", "skills", skillId);
   if (!existsSync(sourcePath)) {
@@ -108,14 +156,32 @@ function buildSandboxedEnv(requiresEnv: string[]): Record<string, string> {
   return env;
 }
 
+// Paths for secure input/output file handling
+const INPUT_FILE_PATH = "/tmp/skill-input.json";
+const OUTPUT_FILE_PATH = "/tmp/skill-output.txt";
+
 /**
  * Execute a skill with sandboxed environment variables.
+ * User input is passed via a file to prevent shell injection.
+ * If expectedHash is provided, verifies the skill content matches before execution.
  */
 export async function executeSkill(
   skillId: string,
-  userInput: string
+  userInput: string,
+  expectedHash?: string
 ): Promise<ExecutionResult> {
   const skillDir = fetchSkillFolder(skillId);
+
+  // Verify content hash if provided (important for verifiability)
+  if (expectedHash) {
+    const actualHash = computeContentHash(skillDir);
+    if (actualHash !== expectedHash) {
+      throw new Error(
+        `Skill content hash mismatch for "${skillId}": expected ${expectedHash.slice(0, 16)}..., got ${actualHash.slice(0, 16)}... — possible tampering`
+      );
+    }
+  }
+
   const skillMdPath = join(skillDir, "SKILL.md");
 
   if (!existsSync(skillMdPath)) {
@@ -132,46 +198,55 @@ export async function executeSkill(
   const steps: ExecutionStep[] = [];
   let lastOutput = "";
 
-  if (executionSteps.length > 0) {
-    for (const step of executionSteps) {
-      const command = step.run
-        .replace(/\{\{input\}\}/g, JSON.stringify(userInput))
-        .replace(/\{\{output\}\}/g, "/tmp/skill-output.txt");
+  // Write user input to a file instead of substituting into shell commands
+  // This prevents shell injection attacks
+  writeFileSync(INPUT_FILE_PATH, JSON.stringify(userInput), { mode: SECURE_FILE_MODE });
 
-      const result = runCommand(command, skillDir, sandboxedEnv);
-      steps.push(result);
-      lastOutput = result.stdout;
+  try {
+    if (executionSteps.length > 0) {
+      for (const step of executionSteps) {
+        // Replace template variables with file paths (not inline content)
+        const command = step.run
+          .replace(/\{\{input\}\}/g, INPUT_FILE_PATH)
+          .replace(/\{\{output\}\}/g, OUTPUT_FILE_PATH);
+
+        const result = runCommand(command, skillDir, sandboxedEnv);
+        steps.push(result);
+        lastOutput = result.stdout;
+      }
+    } else {
+      // No execution manifest — return a message (skills should have manifests)
+      lastOutput = `Skill ${skillId} has no execution manifest. Input was: ${userInput.slice(0, 100)}`;
+      steps.push({
+        command: "(no execution manifest)",
+        stdout: lastOutput,
+        stderr: "",
+        exitCode: 0,
+      });
     }
-  } else {
-    // No execution manifest — run as a simple echo for now
-    // In production, this would send to EigenAI to plan commands
-    const result = runCommand(
-      `echo "Skill ${skillId} has no execution manifest. Input: ${JSON.stringify(userInput)}"`,
-      skillDir,
-      sandboxedEnv
-    );
-    steps.push(result);
-    lastOutput = result.stdout;
-  }
 
-  return {
-    output: lastOutput.trim(),
-    steps,
-    skillId,
-  };
+    return {
+      output: lastOutput.trim(),
+      steps,
+      skillId,
+    };
+  } finally {
+    // Clean up input file
+    try {
+      unlinkSync(INPUT_FILE_PATH);
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
 }
 
-function runCommand(
-  command: string,
-  cwd: string,
-  env: Record<string, string>
-): ExecutionStep {
+function runCommand(command: string, cwd: string, env: Record<string, string>): ExecutionStep {
   try {
     const stdout = execSync(command, {
       cwd,
       env,
-      timeout: 30000,
-      maxBuffer: 1024 * 1024,
+      timeout: EXEC_TIMEOUT_MS,
+      maxBuffer: EXEC_MAX_BUFFER,
       encoding: "utf-8",
     });
 

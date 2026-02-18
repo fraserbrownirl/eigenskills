@@ -7,7 +7,21 @@ const EIGENCOMPUTE_PRIVATE_KEY = process.env.EIGENCOMPUTE_PRIVATE_KEY ?? "";
 const EIGENCOMPUTE_ENVIRONMENT = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
 const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "eigenskills/agent:latest";
 
+// Validation patterns
 const SAFE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+const ENV_KEY_RE = /^[A-Z][A-Z0-9_]*$/;
+
+// Timeouts (milliseconds)
+const TIMEOUT_DEFAULT = 60_000;
+const TIMEOUT_DEPLOY = 300_000;
+const TIMEOUT_INFO = 30_000;
+
+// Log limits
+const MAX_LOG_LINES = 500;
+
+// File permissions
+const DIR_PERMS = 0o700;
+const FILE_PERMS = 0o600;
 
 /**
  * Validate a string before it is interpolated into a shell command.
@@ -20,6 +34,25 @@ function validateShellInput(input: string, label: string): string {
     );
   }
   return input;
+}
+
+/**
+ * Validate environment variable key and value to prevent injection attacks.
+ */
+function validateEnvVar(key: string, value: string): void {
+  // Validate key format (must be uppercase with underscores)
+  if (!ENV_KEY_RE.test(key)) {
+    throw new Error(
+      `Invalid env var key "${key}": must start with uppercase letter, contain only [A-Z0-9_]`
+    );
+  }
+
+  // Reject dangerous characters in values that could inject additional env vars
+  if (value.includes("\n") || value.includes("\r") || value.includes("\0")) {
+    throw new Error(
+      `Invalid env var value for "${key}": cannot contain newlines or null characters`
+    );
+  }
 }
 
 export interface EnvVar {
@@ -40,19 +73,23 @@ export interface DeployResult {
  * Construct a .env file from user-provided env vars.
  * Appends _PUBLIC suffix for public variables.
  * Uses a private temp directory with restricted permissions.
+ * Validates all keys and values before writing.
  */
 function buildEnvFile(envVars: EnvVar[]): string {
   const lines: string[] = [];
 
   for (const { key, value, isPublic } of envVars) {
+    // Validate before processing
+    validateEnvVar(key, value);
+
     const envKey = isPublic && !key.endsWith("_PUBLIC") ? `${key}_PUBLIC` : key;
     lines.push(`${envKey}=${value}`);
   }
 
   const secureDir = mkdtempSync(join(tmpdir(), "eigenskills-"));
-  chmodSync(secureDir, 0o700);
+  chmodSync(secureDir, DIR_PERMS);
   const filepath = join(secureDir, "env");
-  writeFileSync(filepath, lines.join("\n") + "\n", { mode: 0o600 });
+  writeFileSync(filepath, lines.join("\n") + "\n", { mode: FILE_PERMS });
   return filepath;
 }
 
@@ -60,7 +97,10 @@ function buildEnvFile(envVars: EnvVar[]): string {
  * Get exec options with environment variables for ecloud CLI.
  * The oclif-based ecloud CLI reads ECLOUD_PRIVATE_KEY for auth.
  */
-function getExecOptions(timeoutMs: number = 60000, extraEnv: Record<string, string> = {}) {
+function getExecOptions(
+  timeoutMs: number = TIMEOUT_DEFAULT,
+  extraEnv: Record<string, string> = {}
+) {
   return {
     encoding: "utf-8" as const,
     timeout: timeoutMs,
@@ -76,16 +116,13 @@ function getExecOptions(timeoutMs: number = 60000, extraEnv: Record<string, stri
  * Execute a shell command with sanitized error messages.
  * Prevents private keys from leaking in error output.
  */
-function execWithSanitizedErrors(
-  command: string,
-  options: Parameters<typeof execSync>[1]
-): string {
+function execWithSanitizedErrors(command: string, options: Parameters<typeof execSync>[1]): string {
   try {
     return execSync(command, options) as string;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     const sanitized = message.replace(/--private-key\s+\S+/g, "--private-key [REDACTED]");
-    throw new Error(sanitized);
+    throw new Error(sanitized, { cause: err });
   }
 }
 
@@ -95,17 +132,14 @@ function execWithSanitizedErrors(
  * In production, this would call the EigenCompute REST API directly.
  * For now, it shells out to the ecloud CLI.
  */
-export async function deployAgent(
-  name: string,
-  envVars: EnvVar[]
-): Promise<DeployResult> {
+export async function deployAgent(name: string, envVars: EnvVar[]): Promise<DeployResult> {
   const safeName = validateShellInput(name, "agent name");
 
   if (!EIGENCOMPUTE_PRIVATE_KEY) {
     throw new Error(
       "EIGENCOMPUTE_PRIVATE_KEY is not set. " +
-      "Create backend/.env with your ecloud private key. " +
-      "Get your key from: ecloud auth login"
+        "Create backend/.env with your ecloud private key. " +
+        "Get your key from: ecloud auth login"
     );
   }
 
@@ -127,17 +161,17 @@ export async function deployAgent(
     console.log(`Deploying agent: ${safeName}`);
     console.log(`Image: ${AGENT_IMAGE_REF}`);
 
-    const execOpts = getExecOptions(300000);
+    const execOpts = getExecOptions(TIMEOUT_DEPLOY);
     const output = execWithSanitizedErrors(`echo N | ${command}`, execOpts);
 
     // Parse deployment output for app details.
     // ecloud output labels vary between versions -- try multiple patterns.
-    const appIdMatch = output.match(/App ID:\s*(\S+)/i)
-      ?? output.match(/\bID:\s*(0x[a-fA-F0-9]+)/i);
-    const ethMatch = output.match(/EVM Address:\s*(0x[a-fA-F0-9]+)/i)
-      ?? output.match(/Ethereum:\s*(0x[a-fA-F0-9]+)/i);
-    const solMatch = output.match(/Solana Address:\s*(\S+)/i)
-      ?? output.match(/Solana:\s*(\S+)/i);
+    const appIdMatch =
+      output.match(/App ID:\s*(\S+)/i) ?? output.match(/\bID:\s*(0x[a-fA-F0-9]+)/i);
+    const ethMatch =
+      output.match(/EVM Address:\s*(0x[a-fA-F0-9]+)/i) ??
+      output.match(/Ethereum:\s*(0x[a-fA-F0-9]+)/i);
+    const solMatch = output.match(/Solana Address:\s*(\S+)/i) ?? output.match(/Solana:\s*(\S+)/i);
     const ipMatch = output.match(/\bIP:\s*(\d+\.\d+\.\d+\.\d+)/i);
     const digestMatch = output.match(/Docker Digest:\s*(\S+)/i);
 
@@ -184,7 +218,8 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
   if (cached) {
     const age = Date.now() - cached.fetchedAt;
     if (!cached.failed && age < INFO_CACHE_TTL_MS) return cached.data;
-    if (cached.failed && age < INFO_FAIL_COOLDOWN_MS) throw new Error("Skipping app info fetch (cooldown after previous failure)");
+    if (cached.failed && age < INFO_FAIL_COOLDOWN_MS)
+      throw new Error("Skipping app info fetch (cooldown after previous failure)");
   }
 
   try {
@@ -194,7 +229,7 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
       `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
     ].join(" ");
 
-    const output = execWithSanitizedErrors(command, getExecOptions(30000));
+    const output = execWithSanitizedErrors(command, getExecOptions(TIMEOUT_INFO));
 
     // ecloud app info output format (example):
     //   IP:             203.0.113.45
@@ -228,10 +263,7 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
 /**
  * Upgrade an existing agent's env vars.
  */
-export async function upgradeAgent(
-  appId: string,
-  envVars: EnvVar[]
-): Promise<void> {
+export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
   const envFilePath = buildEnvFile(envVars);
 
@@ -244,7 +276,7 @@ export async function upgradeAgent(
       `--image-ref ${AGENT_IMAGE_REF}`,
     ].join(" ");
 
-    execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(300000));
+    execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(TIMEOUT_DEPLOY));
   } finally {
     try {
       unlinkSync(envFilePath);
@@ -265,7 +297,7 @@ export async function stopAgent(appId: string): Promise<void> {
     `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
   ].join(" ");
 
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(60000));
+  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
 }
 
 /**
@@ -279,7 +311,7 @@ export async function startAgent(appId: string): Promise<void> {
     `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
   ].join(" ");
 
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(60000));
+  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
 }
 
 /**
@@ -293,5 +325,22 @@ export async function terminateAgent(appId: string): Promise<void> {
     `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
   ].join(" ");
 
-  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions(60000));
+  execWithSanitizedErrors(`echo N | ${command}`, getExecOptions());
+}
+
+/**
+ * Get application logs from EigenCompute.
+ */
+export async function getAppLogs(appId: string, lines: number = 100): Promise<string> {
+  const safeAppId = validateShellInput(appId, "app ID");
+  const safeLines = Math.min(Math.max(1, Math.floor(lines)), MAX_LOG_LINES);
+
+  const command = [
+    "ecloud compute app logs",
+    safeAppId,
+    `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
+    `--tail ${safeLines}`,
+  ].join(" ");
+
+  return execWithSanitizedErrors(command, getExecOptions(TIMEOUT_INFO));
 }
