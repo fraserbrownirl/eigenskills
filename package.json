@@ -4,7 +4,7 @@
   "description": "A verifiable agent platform built on EigenCompute",
   "private": true,
   "scripts": {
-    "prepare": "husky",
+    "prepare": "husky || true",
     "typecheck": "npm run typecheck -w backend -w agent -w frontend",
     "lint": "npm run lint -w backend -w agent && npm run lint -w frontend",
     "format": "prettier --write .",
