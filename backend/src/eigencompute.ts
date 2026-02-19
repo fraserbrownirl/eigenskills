@@ -47,12 +47,29 @@ function validateEnvVar(key: string, value: string): void {
     );
   }
 
-  // Reject dangerous characters in values that could inject additional env vars
-  if (value.includes("\n") || value.includes("\r") || value.includes("\0")) {
-    throw new Error(
-      `Invalid env var value for "${key}": cannot contain newlines or null characters`
-    );
+  // Reject null characters (truly dangerous)
+  if (value.includes("\0")) {
+    throw new Error(`Invalid env var value for "${key}": cannot contain null characters`);
   }
+}
+
+/**
+ * Escape a value for safe inclusion in an env file.
+ * Uses double quotes and escapes internal quotes, backslashes, and special chars.
+ */
+function escapeEnvValue(value: string): string {
+  // If value contains special characters, wrap in double quotes and escape
+  if (/[\n\r"'\\$`]/.test(value) || value.includes(" ")) {
+    const escaped = value
+      .replace(/\\/g, "\\\\")
+      .replace(/"/g, '\\"')
+      .replace(/\$/g, "\\$")
+      .replace(/`/g, "\\`")
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r");
+    return `"${escaped}"`;
+  }
+  return value;
 }
 
 export interface EnvVar {
@@ -83,7 +100,7 @@ function buildEnvFile(envVars: EnvVar[]): string {
     validateEnvVar(key, value);
 
     const envKey = isPublic && !key.endsWith("_PUBLIC") ? `${key}_PUBLIC` : key;
-    lines.push(`${envKey}=${value}`);
+    lines.push(`${envKey}=${escapeEnvValue(value)}`);
   }
 
   const secureDir = mkdtempSync(join(tmpdir(), "eigenskills-"));

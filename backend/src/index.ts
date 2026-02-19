@@ -126,6 +126,7 @@ const MAX_TASK_LENGTH = 10 * 1024; // 10KB
 const DEFAULT_LOG_LINES = 100;
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(helmet());
 app.use(express.json({ limit: JSON_BODY_LIMIT }));
 app.use(
