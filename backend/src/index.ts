@@ -135,7 +135,14 @@ const DEFAULT_LOG_LINES = 100;
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
-app.use(express.json({ limit: JSON_BODY_LIMIT }));
+
+// Skip JSON parsing for webhook route (needs raw body for signature verification)
+app.use((req, res, next) => {
+  if (req.path === "/api/webhook/deploy-result") {
+    return next();
+  }
+  express.json({ limit: JSON_BODY_LIMIT })(req, res, next);
+});
 app.use(
   cors({
     origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
