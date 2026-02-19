@@ -303,6 +303,19 @@ export interface DbOperations {
   getTelegramLink(chatId: string): TelegramLinkRow | undefined;
   getTelegramLinkByUser(userAddress: string): TelegramLinkRow | undefined;
   unlinkTelegram(userAddress: string): boolean;
+  createPendingDeploy(
+    dispatchId: string,
+    userAddress: string,
+    agentId: number | null,
+    action: "deploy" | "upgrade"
+  ): void;
+  getPendingDeploy(dispatchId: string): PendingDeployRow | undefined;
+  getPendingDeployByUser(userAddress: string): PendingDeployRow | undefined;
+  completePendingDeploy(
+    dispatchId: string,
+    status: "success" | "error",
+    errorMessage?: string
+  ): boolean;
 }
 
 /**
