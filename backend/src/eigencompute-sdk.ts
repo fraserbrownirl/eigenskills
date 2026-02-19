@@ -163,11 +163,11 @@ export async function deployAgent(name: string, envVars: EnvVar[]): Promise<Depl
       imageDigest,
       envFile: envFilePath,
       instanceType: "g1-standard-4t",
-      logVisibility: "public",
+      logVisibility: "off",
       resourceUsageMonitoring: "enable",
     });
 
-    console.log(`[SDK] Gas estimate: ${JSON.stringify(gasEstimate)}`);
+    console.log(`[SDK] Gas estimate ready`);
 
     const result = await client.compute.app.executeDeploy(prepared, gasEstimate);
     console.log(`[SDK] Deploy tx: ${result.txHash}`);
@@ -209,7 +209,7 @@ export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<vo
         imageDigest,
         envFile: envFilePath,
         instanceType: "g1-standard-4t",
-        logVisibility: "public",
+        logVisibility: "off",
         resourceUsageMonitoring: "enable",
       }
     );
