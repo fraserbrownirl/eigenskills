@@ -690,12 +690,21 @@ app.post("/api/agents/terminate", requireAuth, async (req, res) => {
   try {
     const userAddress = getUserAddress(req);
     const agent = getAgentByUser(userAddress);
-    if (!agent?.app_id) {
+    if (!agent || agent.status === "terminated") {
       res.status(404).json({ error: "No active agent found" });
       return;
     }
 
-    await terminateAgent(agent.app_id);
+    // If agent has an app_id, terminate on EigenCompute
+    if (agent.app_id) {
+      try {
+        await terminateAgent(agent.app_id);
+      } catch (err) {
+        console.warn("EigenCompute terminate failed (may not exist):", err);
+      }
+    }
+
+    // Always mark as terminated in database
     updateAgent(agent.id, { status: "terminated" });
     res.json({ success: true });
   } catch (error) {
