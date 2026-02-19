@@ -6,6 +6,7 @@ import AgentSetup from "@/components/AgentSetup";
 import Dashboard from "@/components/Dashboard";
 import { getAgentInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { MemeLogo } from "@/components/ui/meme-logo";
 import { Shield, Cpu, Lock, LogOut } from "lucide-react";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
@@ -99,9 +100,7 @@ export default function Home() {
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <span className="text-lg font-bold">E</span>
-            </div>
+            <MemeLogo className="h-9 w-9" />
             <span className="text-lg font-bold tracking-tight">EigenSkills</span>
           </div>
 
@@ -113,9 +112,9 @@ export default function Home() {
                   {address.slice(0, 6)}...{address.slice(-4)}
                 </span>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleDisconnect}
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -188,7 +187,15 @@ export default function Home() {
   );
 }
 
-function Feature({ title, description, icon: Icon }: { title: string; description: string; icon: any }) {
+function Feature({
+  title,
+  description,
+  icon: Icon,
+}: {
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
   return (
     <div className="group rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5">
       <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
