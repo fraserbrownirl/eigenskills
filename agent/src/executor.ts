@@ -15,7 +15,7 @@ import matter from "gray-matter";
 const SKILLS_CACHE_DIR = "/tmp/eigenskills";
 
 // Remote registry for production (can be overridden via env)
-const DEFAULT_REGISTRY_REPO = "https://github.com/38d3b7/eigenskills.git";
+const DEFAULT_REGISTRY_REPO = "https://github.com/fraserbrownirl/eigenskills-v2.git";
 
 function getLocalRegistryPath(): string | undefined {
   return process.env.SKILL_REGISTRY_LOCAL;

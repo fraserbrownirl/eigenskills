@@ -1,26 +1,41 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { submitTask } from "@/lib/api";
-import { Loader2, Send, CheckCircle2 } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { submitTask, type TaskResult } from "@/lib/api";
+import { Loader2, Send, CheckCircle2, Cpu, ShieldCheck, AlertTriangle } from "lucide-react";
 
 interface TaskInterfaceProps {
   token: string;
   canSubmit: boolean;
+  agentStartingUp?: boolean;
+  healthy?: boolean;
   onError: (error: string) => void;
 }
 
-export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps) {
+export function TaskInterface({
+  token,
+  canSubmit,
+  agentStartingUp,
+  healthy,
+  onError,
+}: TaskInterfaceProps) {
   const [task, setTask] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TaskResult | null>(null);
 
   async function handleSubmit() {
     if (!task.trim()) return;
-    
+
     setSubmitting(true);
     setResult(null);
-    
+
     try {
       const res = await submitTask(token, task);
       setResult(res);
@@ -38,10 +53,23 @@ export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps)
         <CardHeader>
           <CardTitle>Submit Task</CardTitle>
           <CardDescription>
-            Send instructions to your agent. It will execute them securely in the TEE.
+            Your agent routes tasks to the best skill via EigenAI, then executes securely in the
+            TEE.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {agentStartingUp && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400">
+              <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+              Agent is starting up. Waiting for instance IP...
+            </div>
+          )}
+          {!agentStartingUp && canSubmit && !healthy && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              Agent health check pending — you can still submit tasks.
+            </div>
+          )}
           <textarea
             value={task}
             onChange={(e) => setTask(e.target.value)}
@@ -51,12 +79,16 @@ export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps)
           />
         </CardContent>
         <CardFooter className="justify-end">
-          <Button 
-            onClick={handleSubmit} 
+          <Button
+            onClick={handleSubmit}
             disabled={!canSubmit || submitting || !task.trim()}
             className="gap-2"
           >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
             Submit Task
           </Button>
         </CardFooter>
@@ -65,9 +97,7 @@ export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps)
       <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl h-full flex flex-col">
         <CardHeader>
           <CardTitle>Result</CardTitle>
-          <CardDescription>
-            Output from your agent's execution.
-          </CardDescription>
+          <CardDescription>Output from your agent&apos;s execution.</CardDescription>
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
           {result ? (
@@ -78,16 +108,57 @@ export function TaskInterface({ token, canSubmit, onError }: TaskInterfaceProps)
                   <span className="font-semibold">Execution Successful</span>
                 </div>
                 <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono">
-                  {JSON.stringify(result.result, null, 2)}
+                  {result.result}
                 </pre>
               </div>
-              
-              {result.signatures && (
+
+              {result.skillsUsed.length > 0 && (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-                  <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Verifiable Signature</span>
-                  <p className="mt-1 break-all font-mono text-xs text-zinc-400">
-                    {result.signatures[0] || "No signature returned"}
-                  </p>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Cpu className="h-4 w-4 text-zinc-500" />
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                      Skills Used
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {result.skillsUsed.map((skill) => (
+                      <span
+                        key={skill}
+                        className="rounded-full bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-medium text-primary"
+                      >
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(result.agentSignature || result.routingSignature) && (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 space-y-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ShieldCheck className="h-4 w-4 text-zinc-500" />
+                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                      Verifiable Signatures
+                    </span>
+                  </div>
+                  {result.agentSignature && (
+                    <div>
+                      <span className="text-[10px] font-medium text-zinc-600 uppercase">Agent</span>
+                      <p className="mt-0.5 break-all font-mono text-xs text-zinc-400">
+                        {result.agentSignature}
+                      </p>
+                    </div>
+                  )}
+                  {result.routingSignature && (
+                    <div>
+                      <span className="text-[10px] font-medium text-zinc-600 uppercase">
+                        Routing
+                      </span>
+                      <p className="mt-0.5 break-all font-mono text-xs text-zinc-400">
+                        {result.routingSignature}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

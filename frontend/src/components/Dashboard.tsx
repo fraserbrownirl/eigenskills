@@ -82,7 +82,8 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
     );
   }
 
-  const canSubmitTask = !!agent.instanceIp && agent.healthy;
+  const canSubmitTask = !!agent.instanceIp;
+  const agentStartingUp = agent.status === "running" && !agent.instanceIp;
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-4">
@@ -108,7 +109,13 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
 
           <div className="min-h-[400px]">
             {activeTab === "task" && (
-              <TaskInterface token={token} canSubmit={canSubmitTask} onError={setError} />
+              <TaskInterface
+                token={token}
+                canSubmit={canSubmitTask}
+                agentStartingUp={agentStartingUp}
+                healthy={agent.healthy}
+                onError={setError}
+              />
             )}
 
             {activeTab === "skills" && <SkillsList skills={skills} />}
