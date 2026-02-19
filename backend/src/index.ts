@@ -494,6 +494,9 @@ app.post(
 
       // Use raw body for HMAC verification
       const rawBody = req.body.toString("utf8");
+      console.log("Webhook raw body length:", rawBody.length);
+      console.log("Webhook raw body:", rawBody.substring(0, 200));
+      console.log("Secret length:", DEPLOY_WEBHOOK_SECRET.length);
       const expectedSig = createHmac("sha256", DEPLOY_WEBHOOK_SECRET).update(rawBody).digest("hex");
 
       const sigBuffer = Buffer.from(signature.replace("sha256=", ""), "hex");
