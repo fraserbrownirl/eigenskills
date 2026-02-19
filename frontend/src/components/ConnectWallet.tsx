@@ -5,7 +5,14 @@ import { hasMetaMask, connectWallet, signSiweMessage } from "@/lib/wallet";
 import { verifyAuth } from "@/lib/api";
 import { getAddress } from "ethers";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Wallet, ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 
 interface ConnectWalletProps {
@@ -116,9 +123,7 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
     <Card className="w-full border-zinc-800 bg-zinc-900/50 backdrop-blur-xl shadow-2xl">
       <CardHeader className="text-center">
         <CardTitle>Connect Wallet</CardTitle>
-        <CardDescription>
-          Connect your wallet to manage your AI agent
-        </CardDescription>
+        <CardDescription>Connect your wallet to deploy and command your agent army</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {account ? (
@@ -146,23 +151,31 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
       </CardContent>
       <CardFooter className="flex flex-col gap-3">
         {!account ? (
-          <Button 
-            size="lg" 
-            className="w-full gap-2 text-base" 
-            onClick={handleConnect} 
+          <Button
+            size="lg"
+            className="w-full gap-2 text-base"
+            onClick={handleConnect}
             disabled={loading}
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Wallet className="h-4 w-4" />
+            )}
             Connect MetaMask
           </Button>
         ) : (
-          <Button 
-            size="lg" 
-            className="w-full gap-2 text-base" 
-            onClick={handleSignIn} 
+          <Button
+            size="lg"
+            className="w-full gap-2 text-base"
+            onClick={handleSignIn}
             disabled={loading}
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4" />
+            )}
             Sign In
           </Button>
         )}

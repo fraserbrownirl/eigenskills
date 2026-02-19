@@ -134,14 +134,14 @@ export default function Home() {
             <div className="text-center space-y-6 max-w-3xl">
               <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
                 <Shield className="mr-2 h-4 w-4" />
-                Verifiable AI on EigenLayer
+                Self-Sovereign AI on EigenLayer
               </div>
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
-                Deploy your sovereign AI agent
+                Build an army of money-making agents that verify
               </h1>
               <p className="mx-auto max-w-2xl text-lg text-muted-foreground md:text-xl">
-                Run a sovereign AI agent inside a Trusted Execution Environment. Your keys, your
-                wallet, your skills — cryptographically verified and tamper-proof.
+                Deploy self-sovereign AI agents that earn, trade, and execute — all inside a Trusted
+                Execution Environment. Cryptographically verified. Tamper-proof. Yours.
               </p>
             </div>
 
@@ -152,18 +152,18 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-8 pt-12 text-left md:grid-cols-3 max-w-5xl w-full">
               <Feature
                 icon={Shield}
-                title="Sovereign Wallet"
-                description="Every agent gets a unique wallet generated inside the TEE. Only your agent can access its keys."
+                title="Self-Sovereign Wallet"
+                description="Every agent gets its own wallet inside the TEE. Only your agent holds the keys — not us, not anyone."
               />
               <Feature
                 icon={Cpu}
-                title="Verifiable Execution"
-                description="Every response is signed by your agent and verified by EigenAI. Full audit trail on-chain."
+                title="Verifiable Everything"
+                description="Every action is signed and verified on-chain by EigenAI. Full audit trail. Zero trust required."
               />
               <Feature
                 icon={Lock}
-                title="Encrypted Config"
-                description="API keys are encrypted with KMS and only decrypted inside the TEE. Not even the platform can read them."
+                title="Encrypted by Default"
+                description="Secrets are encrypted with KMS and only decrypted inside the TEE. Not even the platform can read them."
               />
             </div>
           </div>

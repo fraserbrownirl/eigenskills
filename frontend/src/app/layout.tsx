@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "EigenSkills",
-  description: "Deploy your verifiable AI agent",
+  description: "Build an army of self-sovereign money-making agents that verify",
 };
 
 export default function RootLayout({
