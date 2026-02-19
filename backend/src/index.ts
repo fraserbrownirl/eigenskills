@@ -143,9 +143,24 @@ app.use((req, res, next) => {
   }
   express.json({ limit: JSON_BODY_LIMIT })(req, res, next);
 });
+// CORS: allow configured frontend and common dev/prod URLs
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:3000",
+  "https://eigenskills-v2.vercel.app",
+].filter(Boolean) as string[];
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, etc)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn("CORS blocked origin:", origin);
+        callback(null, false);
+      }
+    },
     credentials: true,
   })
 );
