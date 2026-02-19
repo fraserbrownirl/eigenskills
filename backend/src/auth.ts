@@ -6,6 +6,7 @@ const TOKEN_SECRET = process.env.TOKEN_SECRET ?? randomBytes(32).toString("hex")
 
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const NONCE_CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // Nonce store: nonce -> expiration timestamp
 const nonceStore = new Map<string, number>();
@@ -18,7 +19,7 @@ setInterval(() => {
       nonceStore.delete(nonce);
     }
   }
-}, 60 * 1000); // Every minute
+}, NONCE_CLEANUP_INTERVAL_MS);
 
 /**
  * Generate a cryptographically secure nonce for SIWE.

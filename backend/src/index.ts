@@ -33,6 +33,7 @@ import {
   createTelegramLinkCode,
   getTelegramLinkByUser,
   unlinkTelegram,
+  type MemoryRow,
 } from "./db.js";
 import { initTelegramBot, sendTelegramMessage } from "./telegram.js";
 import {
@@ -770,7 +771,7 @@ app.get("/api/agents/memory", requireAuth, (req, res) => {
     const q = req.query.q as string | undefined;
     const entries = q ? searchMemory(userAddress, q) : listMemory(userAddress);
     res.json({
-      entries: entries.map((e) => ({
+      entries: entries.map((e: MemoryRow) => ({
         key: e.key,
         content: e.content,
         updatedAt: e.updated_at,

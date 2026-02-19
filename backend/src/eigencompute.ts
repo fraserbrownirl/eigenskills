@@ -293,7 +293,9 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
 }
 
 /**
- * Upgrade an existing agent's env vars.
+ * Upgrade an existing agent's env vars and/or Docker image.
+ * Wallet address, grants, and instance IP are preserved across upgrades.
+ * A new cryptographic attestation is generated for the updated image.
  */
 export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
