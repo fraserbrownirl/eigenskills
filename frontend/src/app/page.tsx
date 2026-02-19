@@ -5,6 +5,8 @@ import ConnectWallet from "@/components/ConnectWallet";
 import AgentSetup from "@/components/AgentSetup";
 import Dashboard from "@/components/Dashboard";
 import { getAgentInfo } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Shield, Cpu, Lock, LogOut } from "lucide-react";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
 
@@ -28,15 +30,23 @@ export default function Home() {
         const { token: savedToken, address: savedAddress } = JSON.parse(saved);
 
         // Validate token by checking agent info
-        const agentInfo = await getAgentInfo(savedToken);
+        // Note: In a real app, we might want to do this check more gracefully
+        // to avoid blocking the UI if the API is slow
+        try {
+          const agentInfo = await getAgentInfo(savedToken);
+          setToken(savedToken);
+          setAddress(savedAddress);
 
-        setToken(savedToken);
-        setAddress(savedAddress);
-
-        if (agentInfo && agentInfo.status !== "terminated") {
-          setView("dashboard");
-        } else {
-          setView("setup");
+          if (agentInfo && agentInfo.status !== "terminated") {
+            setView("dashboard");
+          } else {
+            setView("setup");
+          }
+        } catch (e) {
+          // If token is invalid, clear session
+          console.error("Session restoration failed:", e);
+          localStorage.removeItem(SESSION_KEY);
+          setView("landing");
         }
       } catch {
         // Token invalid or expired — clear and show landing
@@ -72,71 +82,87 @@ export default function Home() {
     setView("landing");
   }
 
+  if (view === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-muted-foreground animate-pulse">Initializing secure session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/20 selection:text-primary-foreground">
       {/* Header */}
-      <header className="border-b border-zinc-900">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
-              <span className="text-sm font-bold text-zinc-900">E</span>
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 md:px-8">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <span className="text-lg font-bold">E</span>
             </div>
-            <span className="text-lg font-bold">EigenSkills</span>
+            <span className="text-lg font-bold tracking-tight">EigenSkills</span>
           </div>
 
           {address && (
-            <div className="flex items-center gap-3">
-              <span className="hidden font-mono text-sm text-zinc-500 sm:block">
-                {address.slice(0, 6)}...{address.slice(-4)}
-              </span>
-              <div className="h-3 w-3 rounded-full bg-emerald-400" />
-              <button
+            <div className="flex items-center gap-4">
+              <div className="hidden items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs md:flex">
+                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-mono text-muted-foreground">
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                </span>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
                 onClick={handleDisconnect}
-                className="ml-2 text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-muted-foreground hover:text-foreground"
               >
+                <LogOut className="mr-2 h-4 w-4" />
                 Disconnect
-              </button>
+              </Button>
             </div>
           )}
         </div>
       </header>
 
       {/* Content */}
-      <main className="px-6 py-12">
-        {/* Loading */}
-        {view === "loading" && (
-          <div className="flex items-center justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
-          </div>
-        )}
-
+      <main className="container mx-auto max-w-screen-2xl px-4 py-8 md:px-8 md:py-12">
         {/* Landing */}
         {view === "landing" && (
-          <div className="mx-auto max-w-2xl pt-20 text-center">
-            <h1 className="text-5xl font-bold tracking-tight text-white">
-              Deploy your verifiable
-              <br />
-              AI agent
-            </h1>
-            <p className="mx-auto mt-6 max-w-lg text-lg text-zinc-400">
-              Run a sovereign AI agent inside a Trusted Execution Environment. Your keys, your
-              wallet, your skills — cryptographically verified.
-            </p>
+          <div className="flex flex-col items-center justify-center space-y-12 py-12 md:py-24">
+            <div className="text-center space-y-6 max-w-3xl">
+              <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
+                <Shield className="mr-2 h-4 w-4" />
+                Verifiable AI on EigenLayer
+              </div>
+              <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
+                Deploy your sovereign AI agent
+              </h1>
+              <p className="mx-auto max-w-2xl text-lg text-muted-foreground md:text-xl">
+                Run a sovereign AI agent inside a Trusted Execution Environment. Your keys, your
+                wallet, your skills — cryptographically verified and tamper-proof.
+              </p>
+            </div>
 
-            <div className="mt-12">
+            <div className="w-full max-w-md">
               <ConnectWallet onConnected={handleConnected} />
             </div>
 
-            <div className="mt-20 grid grid-cols-3 gap-8 text-left">
+            <div className="grid grid-cols-1 gap-8 pt-12 text-left md:grid-cols-3 max-w-5xl w-full">
               <Feature
+                icon={Shield}
                 title="Sovereign Wallet"
                 description="Every agent gets a unique wallet generated inside the TEE. Only your agent can access its keys."
               />
               <Feature
+                icon={Cpu}
                 title="Verifiable Execution"
                 description="Every response is signed by your agent and verified by EigenAI. Full audit trail on-chain."
               />
               <Feature
+                icon={Lock}
                 title="Encrypted Config"
                 description="API keys are encrypted with KMS and only decrypted inside the TEE. Not even the platform can read them."
               />
@@ -145,22 +171,31 @@ export default function Home() {
         )}
 
         {/* Setup */}
-        {view === "setup" && <AgentSetup token={token} onDeployed={handleDeployed} />}
+        {view === "setup" && (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <AgentSetup token={token} onDeployed={handleDeployed} />
+          </div>
+        )}
 
         {/* Dashboard */}
         {view === "dashboard" && (
-          <Dashboard token={token} address={address} onAgentTerminated={handleTerminated} />
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <Dashboard token={token} address={address} onAgentTerminated={handleTerminated} />
+          </div>
         )}
       </main>
     </div>
   );
 }
 
-function Feature({ title, description }: { title: string; description: string }) {
+function Feature({ title, description, icon: Icon }: { title: string; description: string; icon: any }) {
   return (
-    <div>
-      <h3 className="font-semibold text-white">{title}</h3>
-      <p className="mt-2 text-sm leading-relaxed text-zinc-500">{description}</p>
+    <div className="group rounded-lg border border-border bg-card p-6 transition-all hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5">
+      <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+        <Icon className="h-5 w-5" />
+      </div>
+      <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+      <p className="mt-2 text-sm text-muted-foreground leading-relaxed">{description}</p>
     </div>
   );
 }

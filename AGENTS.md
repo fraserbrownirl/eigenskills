@@ -161,14 +161,51 @@ Env vars ending in `_PUBLIC` are visible on-chain in EigenCompute. All others ar
 - No `MNEMONIC` env var → `wallet.ts` returns zero-address and dummy signatures
 - `SKILL_REGISTRY_LOCAL` env var → `executor.ts` copies from local path instead of git sparse-checkout
 
-### Docker Image Updates Require Redeploy
-EigenCompute doesn't support in-place image updates. To deploy new agent code:
-1. Rebuild + push Docker image
-2. Terminate old agent (Dashboard)
-3. Deploy new agent (gets new wallet address)
+### Docker Image Updates via Upgrade
+EigenCompute supports in-place image updates that **preserve the wallet**. To deploy new agent code:
+1. Rebuild + push Docker image to Docker Hub
+2. Call `upgradeAgent()` (Dashboard "Update" or API `POST /api/agents/upgrade`)
+3. Wallet address, grants, and instance IP remain unchanged
 
-### Grant Activation on Redeploy
-Each agent deployment gets a new wallet. You must activate the EigenAI grant for the new address at https://eigenarcade.com.
+What stays the same across upgrades:
+- App ID
+- TEE wallet address (same MNEMONIC)
+- Instance IP (usually)
+- EigenAI grant activation
+
+What changes:
+- Docker image (new attestation generated)
+- Environment variables (if updated)
+
+### When to Terminate (Rare)
+Only terminate when you want to **permanently destroy** the agent:
+- Wallet is destroyed and funds are irrecoverable
+- Requires fresh deploy with new wallet address
+- New wallet requires new EigenAI grant activation at https://eigenarcade.com
+
+### TEE Constraints (Critical for Architecture)
+
+**No Persistent Storage**
+- EigenCompute has no volumes, no disk mounts, no persistent filesystem
+- Container filesystem is wiped on every `stop`/`start`/`upgrade`
+- All persistence must go through external storage (Supabase, backend API, IPFS)
+- Use signed-state pattern: sign state before saving, verify signature when loading
+
+**Trust Anchors**
+- **Wallet** = identity anchor (persists across upgrades, destroyed on terminate)
+- **Docker image** = trust anchor (attestation proves this exact image runs)
+- **TEE attestation** = binding (proves only this image can access the wallet)
+
+**Attestation is Docker-Digest-Specific**
+- On-chain record proves the SHA-256 digest of the deployed image
+- If agent modifies its own files at runtime, modified code runs **unattested**
+- This breaks verifiability — never self-modify source files
+
+**Evolution Strategies**
+- **Config-driven** (recommended): same image, behavior changes through external config/data
+- **Upgrade-mediated**: new image via `upgrade`, new attestation, wallet preserved
+
+See `docs/eigencompute-reference.md` for detailed documentation.
 
 ## Reference Docs
 

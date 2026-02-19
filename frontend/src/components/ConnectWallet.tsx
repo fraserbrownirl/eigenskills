@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { hasMetaMask, connectWallet, signSiweMessage } from "@/lib/wallet";
 import { verifyAuth } from "@/lib/api";
 import { getAddress } from "ethers";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Wallet, ArrowRight, Loader2, ShieldCheck } from "lucide-react";
 
 interface ConnectWalletProps {
   onConnected: (address: string, token: string, hasAgent: boolean) => void;
@@ -110,61 +113,65 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
   const shortAddress = account ? `${account.slice(0, 6)}...${account.slice(-4)}` : null;
 
   return (
-    <div className="flex flex-col items-center gap-4">
-      {/* Show current connection status only after user connects */}
-      {account && (
-        <div className="mb-2 rounded-xl border border-zinc-700 bg-zinc-900/50 px-6 py-4 text-center">
-          <p className="text-sm text-zinc-400">Connected</p>
-          <p className="mt-1 font-mono text-lg text-white">{shortAddress}</p>
-          {chainName && <p className="mt-1 text-sm text-zinc-400">{chainName}</p>}
-          <p className="mt-3 text-xs text-zinc-500">Change account or network in MetaMask</p>
-        </div>
-      )}
+    <Card className="w-full border-zinc-800 bg-zinc-900/50 backdrop-blur-xl shadow-2xl">
+      <CardHeader className="text-center">
+        <CardTitle>Connect Wallet</CardTitle>
+        <CardDescription>
+          Connect your wallet to manage your AI agent
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        {account ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/10 p-4 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-center gap-2 text-primary mb-2">
+              <ShieldCheck className="h-5 w-5" />
+              <span className="font-medium">Wallet Connected</span>
+            </div>
+            <p className="font-mono text-lg text-white">{shortAddress}</p>
+            {chainName && <p className="mt-1 text-xs text-muted-foreground">{chainName}</p>}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-zinc-700 p-8 text-center text-muted-foreground">
+            <Wallet className="mx-auto mb-3 h-10 w-10 opacity-50" />
+            <p>No wallet connected</p>
+          </div>
+        )}
 
-      {/* Action buttons */}
-      {!account ? (
-        <button
-          onClick={handleConnect}
-          disabled={loading}
-          className="flex h-14 items-center gap-3 rounded-xl bg-white px-8 text-lg font-semibold text-zinc-900 shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
-        >
-          {loading ? (
-            <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
-          ) : (
-            <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M21 18V19C21 20.1 20.1 21 19 21H5C3.89 21 3 20.1 3 19V5C3 3.9 3.89 3 5 3H19C20.1 3 21 3.9 21 5V6H12C10.89 6 10 6.9 10 8V16C10 17.1 10.89 18 12 18H21ZM12 16H22V8H12V16ZM16 13.5C15.17 13.5 14.5 12.83 14.5 12C14.5 11.17 15.17 10.5 16 10.5C16.83 10.5 17.5 11.17 17.5 12C17.5 12.83 16.83 13.5 16 13.5Z"
-                fill="currentColor"
-              />
-            </svg>
-          )}
-          {loading ? "Connecting..." : "Connect Wallet"}
-        </button>
-      ) : (
-        <button
-          onClick={handleSignIn}
-          disabled={loading}
-          className="flex h-14 items-center justify-center gap-3 rounded-xl bg-white px-8 text-lg font-semibold text-zinc-900 shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:hover:scale-100"
-        >
-          {loading ? (
-            <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
-          ) : (
-            <svg
-              className="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          )}
-          {loading ? "Signing in..." : "Sign In"}
-        </button>
-      )}
-
-      {error && <p className="max-w-xs text-center text-sm text-red-400">{error}</p>}
-    </div>
+        {error && (
+          <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive text-center flex items-center justify-center gap-2">
+            <Loader2 className="h-4 w-4" />
+            {error}
+          </div>
+        )}
+      </CardContent>
+      <CardFooter className="flex flex-col gap-3">
+        {!account ? (
+          <Button 
+            size="lg" 
+            className="w-full gap-2 text-base" 
+            onClick={handleConnect} 
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+            Connect MetaMask
+          </Button>
+        ) : (
+          <Button 
+            size="lg" 
+            className="w-full gap-2 text-base" 
+            onClick={handleSignIn} 
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+            Sign In
+          </Button>
+        )}
+        {account && (
+          <p className="text-center text-xs text-muted-foreground">
+            Please sign the message to authenticate
+          </p>
+        )}
+      </CardFooter>
+    </Card>
   );
 }

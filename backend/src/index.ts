@@ -255,6 +255,27 @@ app.get("/api/auth/grant", authLimiter, async (req, res) => {
   }
 });
 
+// GET /api/auth/grant-message — proxy grant message fetch to avoid CORS
+app.get("/api/auth/grant-message", authLimiter, async (req, res) => {
+  const address = typeof req.query.address === "string" ? req.query.address.trim() : "";
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    res.status(400).json({ error: "Invalid or missing address" });
+    return;
+  }
+  try {
+    const msgRes = await fetch(`${GRANT_API}/message?address=${encodeURIComponent(address)}`);
+    if (!msgRes.ok) {
+      res.status(msgRes.status).json({ error: "Failed to fetch grant message" });
+      return;
+    }
+    const data = await msgRes.json();
+    res.json(data);
+  } catch (err) {
+    console.error("Grant message proxy error:", err);
+    res.status(500).json({ error: "Failed to fetch grant message" });
+  }
+});
+
 // POST /api/auth/verify — verify SIWE signature, return session token
 app.post("/api/auth/verify", authLimiter, async (req, res) => {
   try {

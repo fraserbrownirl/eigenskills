@@ -195,7 +195,7 @@ Agents go through these states:
 
 ### Updating Agent Code
 
-After changing anything in `agent/`, you must rebuild and redeploy:
+After changing anything in `agent/`, rebuild and upgrade:
 
 ```bash
 # 1. Rebuild the Docker image
@@ -205,19 +205,27 @@ docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/eigenskills-agent
 # 2. Push to Docker Hub
 docker push YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
 
-# 3. Terminate old agent (from Dashboard UI)
-# 4. Deploy new agent (picks up the new image)
+# 3. Upgrade existing agent (from Dashboard UI "Update" button or API)
+# The wallet address and grants are preserved!
 ```
 
-**Important:** Each new agent gets a **new wallet address**. You must activate the EigenAI grant for the new wallet at https://eigenarcade.com before the agent can use EigenAI.
+### What Upgrade Preserves
 
-### Why Terminate and Redeploy?
+EigenCompute's `upgrade` command updates the Docker image while preserving:
+- **Wallet address** — same MNEMONIC, no grant re-activation needed
+- **Instance IP** — usually unchanged
+- **App ID** — same identifier
 
-EigenCompute does not support in-place image updates. The only way to deploy new code is:
-1. Terminate the old agent
-2. Deploy a fresh agent with the updated image
+A new cryptographic attestation is generated for the updated image.
 
-The new agent will have a different wallet address, so any funds in the old wallet will be lost. Always withdraw funds before terminating.
+### When to Terminate (Rare)
+
+Only terminate when you want to **permanently destroy** the agent:
+- Wallet is destroyed — funds are irrecoverable
+- Requires fresh deploy with new wallet address
+- New wallet requires new EigenAI grant activation at https://eigenarcade.com
+
+Always withdraw funds before terminating.
 
 ## Troubleshooting
 
@@ -228,18 +236,18 @@ The agent container crashed or is unreachable. Common causes:
 - Skill execution failed (e.g., git clone to wrong repo URL)
 - Network issues with EigenCompute instance
 
-**Fix:** Check the agent logs, rebuild the Docker image with fixes, and redeploy.
+**Fix:** Check the agent logs, rebuild the Docker image with fixes, and upgrade the agent.
 
 ### Old code still running after changes
 
 You changed `agent/` code but the deployed agent hasn't picked it up.
 
-**Fix:** You must rebuild and push the Docker image, then terminate and redeploy:
+**Fix:** Rebuild, push, and upgrade (wallet is preserved):
 ```bash
 cd agent
 docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest .
 docker push YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
-# Then terminate + deploy from the Dashboard
+# Then click "Update" in the Dashboard (or call POST /api/agents/upgrade)
 ```
 
 ### Terminated agent still showing in Dashboard
@@ -248,11 +256,13 @@ After terminating, the Dashboard should switch to the deploy view. If it doesn't
 
 **Fix:** Refresh the page. The backend now correctly detects terminated agents and shows the deploy screen.
 
-### EigenAI returns 401/403 after redeploying
+### EigenAI returns 401/403 after fresh deploy
 
-Each agent has a unique wallet. When you deploy a new agent, it gets a new wallet address.
+This only happens after **terminating and deploying a new agent** (not after upgrade). Each fresh deploy gets a new wallet address.
 
 **Fix:** Activate the grant for the new agent's wallet address at https://eigenarcade.com.
+
+**Note:** If you used `upgrade` instead of terminate+deploy, the wallet is preserved and grants remain active.
 
 ## Architecture
 

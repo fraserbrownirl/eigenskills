@@ -2,92 +2,167 @@ import express, { type ErrorRequestHandler } from "express";
 import helmet from "helmet";
 import { getAgentAddress, signMessage } from "./wallet.js";
 import { listSkills, getSkill, fetchRegistry } from "./registry.js";
-import { routeTask } from "./router.js";
+import { agentLoop, callEigenAIText } from "./router.js";
 import { executeSkill } from "./executor.js";
 import { addLogEntry, getHistory } from "./logger.js";
+import {
+  withSessionLock,
+  loadSession,
+  appendMessage,
+  getSessionMessages,
+  saveSession,
+  resetSession,
+  compactSession,
+} from "./sessions.js";
+import {
+  initSelfImprovement,
+  detectExecutionError,
+  detectCorrection,
+  detectFeatureRequest,
+  SI_TOOLS,
+  executeSITool,
+} from "./learnings.js";
+import { MEMORY_TOOLS, executeMemoryTool } from "./memory.js";
+import { registerDefaultHeartbeats, startHeartbeats } from "./heartbeat.js";
 
 const app = express();
-// No CORS - all requests come through the backend proxy
-// The TEE network boundary provides access control
 app.use(helmet());
 app.use(express.json());
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
-// POST /task — submit a task for the agent to route and execute
+// Unified tool executor: dispatches to memory, SI, or skill execution
+async function executeTool(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<string | null> {
+  // Memory tools
+  const memResult = await executeMemoryTool(toolName, args);
+  if (memResult !== null) return memResult;
+
+  // Self-improvement tools
+  const siResult = await executeSITool(toolName, args);
+  if (siResult !== null) return siResult;
+
+  return null;
+}
+
+// POST /task — conversational agentic endpoint
 app.post("/task", async (req, res) => {
   try {
-    const { task } = req.body;
+    const { task, sessionId: rawSessionId } = req.body;
     if (!task || typeof task !== "string") {
       res.status(400).json({ error: "Missing or invalid 'task' field" });
       return;
     }
 
-    await addLogEntry("task_received", { task });
+    const sessionId = typeof rawSessionId === "string" && rawSessionId
+      ? rawSessionId
+      : "default";
 
-    // Get available skills (filtered by user's env vars)
-    const skills = await listSkills();
-    if (skills.length === 0) {
-      res.status(503).json({ error: "No skills available" });
-      return;
-    }
+    await withSessionLock(sessionId, async () => {
+      await addLogEntry("task_received", { task, sessionId });
 
-    // Route the task via EigenAI
-    const routing = await routeTask(task, skills);
-    await addLogEntry("routing_decision", {
-      skillIds: routing.skillIds,
-      eigenaiSignature: routing.signature,
-    });
+      // Load session, compact if needed, append new user message
+      await loadSession(sessionId);
+      await compactSession(sessionId, callEigenAIText);
+      appendMessage(sessionId, { role: "user", content: task });
 
-    if (routing.skillIds.length === 0) {
-      res.status(404).json({ error: "No suitable skill found for this task" });
-      return;
-    }
-
-    // Execute each selected skill in order
-    const results = [];
-    for (const skillId of routing.skillIds) {
-      const skill = await getSkill(skillId);
-      if (!skill) {
-        await addLogEntry("skill_not_found", { skillId });
-        continue;
+      // Auto-detect corrections/feature requests in user input
+      if (detectCorrection(task)) {
+        await addLogEntry("correction_detected", { task: task.slice(0, 200) });
+      }
+      if (detectFeatureRequest(task)) {
+        await addLogEntry("feature_request_detected", { task: task.slice(0, 200) });
       }
 
-      await addLogEntry("skill_executing", {
-        skillId,
-        contentHash: skill.contentHash,
+      // Get available skills
+      const skills = await listSkills();
+
+      // Build conversation messages from session
+      const conversationMessages = getSessionMessages(sessionId).map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+      }));
+
+      // Run multi-turn agentic loop with all tools
+      const allTools = [...MEMORY_TOOLS, ...SI_TOOLS];
+      const loopResult = await agentLoop(
+        conversationMessages,
+        skills,
+        allTools,
+        executeTool
+      );
+
+      await addLogEntry("loop_result", {
+        skillIds: loopResult.skillIds,
+        responseLength: loopResult.response.length,
       });
 
-      // Pass expected content hash for verification (ensures skill hasn't been tampered with)
-      const result = await executeSkill(skillId, task, skill.contentHash);
-      results.push(result);
+      // Execute selected skills (if any)
+      let finalResponse = loopResult.response;
+      if (loopResult.skillIds.length > 0) {
+        const skillOutputs: string[] = [];
+        for (const skillId of loopResult.skillIds) {
+          const skill = await getSkill(skillId);
+          if (!skill) {
+            await addLogEntry("skill_not_found", { skillId });
+            continue;
+          }
 
-      await addLogEntry("skill_completed", {
-        skillId,
-        output: result.output.slice(0, 500),
-        steps: result.steps.length,
+          await addLogEntry("skill_executing", { skillId, contentHash: skill.contentHash });
+          const result = await executeSkill(skillId, task, skill.contentHash);
+
+          for (const step of result.steps) {
+            if (detectExecutionError(step.stderr || step.stdout, step.exitCode)) {
+              await addLogEntry("auto_error_detected", { skillId, stderr: step.stderr.slice(0, 500) });
+            }
+          }
+
+          skillOutputs.push(result.output);
+          await addLogEntry("skill_completed", {
+            skillId,
+            output: result.output.slice(0, 500),
+            steps: result.steps.length,
+          });
+        }
+        if (skillOutputs.length > 0) {
+          finalResponse = finalResponse
+            ? `${finalResponse}\n\n${skillOutputs.join("\n\n")}`
+            : skillOutputs.join("\n\n");
+        }
+      }
+
+      const agentSignature = await signMessage(finalResponse);
+
+      // Append assistant response and persist session
+      appendMessage(sessionId, { role: "assistant", content: finalResponse });
+      await saveSession(sessionId);
+
+      res.json({
+        result: finalResponse,
+        skillsUsed: loopResult.skillIds,
+        routingSignature: loopResult.signature,
+        agentSignature,
+        agentAddress: getAgentAddress(),
+        sessionId,
       });
-    }
-
-    const combinedOutput = results.map((r) => r.output).join("\n\n");
-    const agentSignature = await signMessage(combinedOutput);
-
-    await addLogEntry("result_returned", {
-      output: combinedOutput.slice(0, 500),
-      skillsUsed: routing.skillIds,
-    });
-
-    res.json({
-      result: combinedOutput,
-      skillsUsed: routing.skillIds,
-      routingSignature: routing.signature,
-      agentSignature,
-      agentAddress: getAgentAddress(),
     });
   } catch (error) {
     console.error("Task execution error:", error);
     res.status(500).json({ error: "Task execution failed" });
   }
+});
+
+// POST /session/reset — clear a session's history
+app.post("/session/reset", (req, res) => {
+  const { sessionId } = req.body;
+  if (!sessionId || typeof sessionId !== "string") {
+    res.status(400).json({ error: "Missing or invalid 'sessionId' field" });
+    return;
+  }
+  resetSession(sessionId);
+  res.json({ success: true });
 });
 
 // GET /skills — list available skills
@@ -134,6 +209,8 @@ app.listen(PORT, () => {
   console.log(`Agent address: ${getAgentAddress()}`);
   console.log(`Network: ${process.env.NETWORK_PUBLIC ?? "not set"}`);
 
-  // Pre-fetch the registry on startup
   fetchRegistry().catch((err) => console.error("Failed to pre-fetch registry:", err));
+  initSelfImprovement();
+  registerDefaultHeartbeats();
+  startHeartbeats();
 });

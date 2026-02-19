@@ -1,4 +1,6 @@
-"use client";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, Download } from "lucide-react";
 
 interface ContainerLogsProps {
   logs: string;
@@ -7,27 +9,38 @@ interface ContainerLogsProps {
 }
 
 export function ContainerLogs({ logs, loading, onRefresh }: ContainerLogsProps) {
+  const lines = logs ? logs.split("\n") : [];
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
-      <div className="flex items-center justify-between">
+    <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl h-[600px] flex flex-col">
+      <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <h3 className="text-lg font-bold text-white">Container Logs</h3>
-          <p className="mt-1 text-sm text-zinc-400">
-            Live output from your agent container on EigenCompute.
-          </p>
+          <CardTitle>System Logs</CardTitle>
+          <CardDescription>
+            Live logs from the TEE container.
+          </CardDescription>
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-50"
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
-      </div>
-
-      <pre className="mt-4 max-h-96 overflow-auto rounded-lg bg-zinc-950 p-4 font-mono text-xs text-zinc-400">
-        {logs || "No logs available."}
-      </pre>
-    </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="flex-1 overflow-hidden">
+        <div className="h-full overflow-auto rounded-lg border border-zinc-800 bg-black p-4 font-mono text-xs text-zinc-300">
+          {lines.length > 0 ? (
+            lines.map((log, i) => (
+              <div key={i} className="whitespace-pre-wrap border-b border-zinc-900/50 py-1 last:border-0">
+                {log}
+              </div>
+            ))
+          ) : (
+            <div className="text-center text-zinc-500 py-10">
+              No logs available.
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

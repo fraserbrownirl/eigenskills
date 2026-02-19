@@ -12,7 +12,8 @@ import {
   TabNavigation,
   TaskInterface,
   TerminateConfirmation,
-} from "./dashboard";
+} from "./dashboard/index";
+import { Loader2, AlertCircle } from "lucide-react";
 
 interface DashboardProps {
   token: string;
@@ -61,22 +62,30 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-700 border-t-white" />
+      <div className="flex h-[50vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-muted-foreground">
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <p>Loading agent status...</p>
+        </div>
       </div>
     );
   }
 
   if (!agent) {
     return (
-      <div className="py-20 text-center text-zinc-400">No agent found. Something went wrong.</div>
+      <div className="flex h-[50vh] items-center justify-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-4">
+          <AlertCircle className="h-8 w-8" />
+          <p>No agent found. Something went wrong.</p>
+        </div>
+      </div>
     );
   }
 
-  const canSubmitTask = !!agent.instanceIp;
+  const canSubmitTask = !!agent.instanceIp && agent.healthy;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-4">
       <AgentStatusCard
         agent={agent}
         address={address}
@@ -94,34 +103,39 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
       )}
 
       {agent.status === "running" && (
-        <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
-      )}
+        <div className="space-y-6">
+          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
-      {agent.status === "running" && activeTab === "task" && (
-        <TaskInterface token={token} canSubmit={canSubmitTask} onError={setError} />
-      )}
+          <div className="min-h-[400px]">
+            {activeTab === "task" && (
+              <TaskInterface token={token} canSubmit={canSubmitTask} onError={setError} />
+            )}
 
-      {agent.status === "running" && activeTab === "skills" && <SkillsList skills={skills} />}
+            {activeTab === "skills" && <SkillsList skills={skills} />}
 
-      {agent.status === "running" && activeTab === "history" && (
-        <ExecutionHistory history={history} onRefresh={refreshHistory} />
-      )}
+            {activeTab === "history" && (
+              <ExecutionHistory history={history} onRefresh={refreshHistory} />
+            )}
 
-      {agent.status === "running" && activeTab === "logs" && (
-        <ContainerLogs logs={logs} loading={logsLoading} onRefresh={refreshLogs} />
-      )}
+            {activeTab === "logs" && (
+              <ContainerLogs logs={logs} loading={logsLoading} onRefresh={refreshLogs} />
+            )}
 
-      {agent.status === "running" && activeTab === "settings" && (
-        <SettingsPanel
-          token={token}
-          onCancel={() => setActiveTab("task")}
-          onSaved={() => setActiveTab("task")}
-          onError={setError}
-        />
+            {activeTab === "settings" && (
+              <SettingsPanel
+                token={token}
+                onCancel={() => setActiveTab("task")}
+                onSaved={() => setActiveTab("task")}
+                onError={setError}
+              />
+            )}
+          </div>
+        </div>
       )}
 
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+        <div className="rounded-md bg-destructive/15 p-4 text-sm text-destructive flex items-center gap-2 border border-destructive/20">
+          <AlertCircle className="h-4 w-4" />
           {error}
         </div>
       )}

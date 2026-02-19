@@ -138,8 +138,9 @@ export async function signEigenAIGrant(address: string): Promise<{
     throw new Error("MetaMask not installed");
   }
 
-  // Fetch the grant message from EigenAI
-  const res = await fetch(`${GRANT_API}/message?address=${address}`);
+  // Fetch the grant message via backend proxy (avoids CORS)
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001";
+  const res = await fetch(`${backendUrl}/api/auth/grant-message?address=${address}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch grant message: ${res.status}`);
   }

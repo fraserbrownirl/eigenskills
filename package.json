@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "prepare": "husky",
+    "typecheck": "npm run typecheck -w backend -w agent -w frontend",
     "lint": "npm run lint -w backend -w agent && npm run lint -w frontend",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,6 +22,8 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7"
   },

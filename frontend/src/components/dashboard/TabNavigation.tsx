@@ -1,36 +1,41 @@
-"use client";
-
-import type { TabType } from "@/hooks/useAgentPolling";
-
-const TABS: TabType[] = ["task", "skills", "history", "logs", "settings"];
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { Terminal, List, Activity, Settings, Code } from "lucide-react";
 
 interface TabNavigationProps {
-  activeTab: TabType;
-  onTabChange: (tab: TabType) => void;
+  activeTab: string;
+  onTabChange: (tab: any) => void;
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
+  const tabs = [
+    { id: "task", label: "Task", icon: Terminal },
+    { id: "skills", label: "Skills", icon: Code },
+    { id: "history", label: "History", icon: List },
+    { id: "logs", label: "Logs", icon: Activity },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
+
   return (
-    <div
-      role="tablist"
-      aria-label="Dashboard navigation"
-      className="flex gap-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-1"
-    >
-      {TABS.map((tab) => (
-        <button
-          key={tab}
-          role="tab"
-          aria-selected={activeTab === tab}
-          aria-controls={`tabpanel-${tab}`}
-          id={`tab-${tab}`}
-          onClick={() => onTabChange(tab)}
-          className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium capitalize transition-colors ${
-            activeTab === tab ? "bg-white text-zinc-900" : "text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          {tab}
-        </button>
-      ))}
+    <div className="flex flex-wrap gap-2 border-b border-zinc-800 pb-2">
+      {tabs.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <Button
+            key={tab.id}
+            variant={activeTab === tab.id ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => onTabChange(tab.id)}
+            className={cn(
+              "gap-2",
+              activeTab === tab.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-white"
+            )}
+          >
+            <Icon className="h-4 w-4" />
+            {tab.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }

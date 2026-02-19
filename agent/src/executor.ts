@@ -14,12 +14,16 @@ import matter from "gray-matter";
 
 const SKILLS_CACHE_DIR = "/tmp/eigenskills";
 
-// Local registry path for development (set SKILL_REGISTRY_LOCAL=/path/to/registry/skills)
-const LOCAL_REGISTRY_PATH = process.env.SKILL_REGISTRY_LOCAL;
+// Remote registry for production (can be overridden via env)
+const DEFAULT_REGISTRY_REPO = "https://github.com/38d3b7/eigenskills.git";
 
-// Remote registry for production
-const REGISTRY_REPO =
-  process.env.SKILL_REGISTRY_REPO ?? "https://github.com/38d3b7/eigenskills.git";
+function getLocalRegistryPath(): string | undefined {
+  return process.env.SKILL_REGISTRY_LOCAL;
+}
+
+function getRegistryRepo(): string {
+  return process.env.SKILL_REGISTRY_REPO ?? DEFAULT_REGISTRY_REPO;
+}
 
 // Execution limits
 const EXEC_TIMEOUT_MS = 30_000;
@@ -106,8 +110,9 @@ function fetchSkillFolder(skillId: string): string {
   mkdirSync(SKILLS_CACHE_DIR, { recursive: true });
 
   // Development mode: copy from local registry
-  if (LOCAL_REGISTRY_PATH) {
-    const localSkillPath = resolve(LOCAL_REGISTRY_PATH, skillId);
+  const localRegistryPath = getLocalRegistryPath();
+  if (localRegistryPath) {
+    const localSkillPath = resolve(localRegistryPath, skillId);
     if (!existsSync(localSkillPath)) {
       throw new Error(`Skill "${skillId}" not found in local registry at ${localSkillPath}`);
     }
@@ -117,8 +122,9 @@ function fetchSkillFolder(skillId: string): string {
 
   // Production mode: clone from git
   const repoDir = join(SKILLS_CACHE_DIR, "_repo");
+  const registryRepo = getRegistryRepo();
   if (!existsSync(repoDir)) {
-    execSync(`git clone --depth 1 --filter=blob:none --sparse "${REGISTRY_REPO}" "${repoDir}"`, {
+    execSync(`git clone --depth 1 --filter=blob:none --sparse "${registryRepo}" "${repoDir}"`, {
       stdio: "pipe",
     });
   }

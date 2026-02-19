@@ -120,6 +120,48 @@ REGISTRY_URL_PUBLIC=https://github.com/org/repo
 - Persists across `stop`/`start` and `upgrade` operations
 - **Destroyed permanently** on `terminate`
 
+## Storage and Persistence
+
+EigenCompute provides **no persistent storage**. There are no volumes, no disk mounts, and no way to persist data to the container filesystem.
+
+### What Gets Wiped
+
+| Event | Filesystem | In-Memory State | Wallet | IP |
+|-------|------------|-----------------|--------|-----|
+| `stop` then `start` | Wiped | Lost | Preserved | Usually preserved |
+| `upgrade` | Wiped | Lost | Preserved | Usually preserved |
+| `terminate` | Destroyed | Lost | **Destroyed** | Lost |
+
+### Persistence Strategy
+
+Since the container filesystem is ephemeral, all persistent data must go through **external storage**:
+
+- **Supabase / PostgreSQL** — Structured data, user records, task history
+- **IPFS / Arweave** — Immutable content, skill artifacts
+- **Backend API** — Platform-managed state, agent metadata
+
+### Signed State Pattern
+
+When storing state externally, the agent should sign its state before saving and verify signatures when loading. This ensures:
+
+1. **Integrity** — State hasn't been tampered with in external storage
+2. **Authenticity** — State was created by this agent's wallet
+3. **Freshness** — Include timestamps or nonces to prevent replay
+
+```typescript
+// Save state: sign before storing
+const state = { config: {...}, lastUpdated: Date.now() };
+const signature = await wallet.signMessage(JSON.stringify(state));
+await externalStorage.save({ state, signature, address: wallet.address });
+
+// Load state: verify before using
+const { state, signature, address } = await externalStorage.load();
+const recovered = verifyMessage(JSON.stringify(state), signature);
+if (recovered !== wallet.address) throw new Error("State verification failed");
+```
+
+This pattern maintains verifiability even though the storage layer is untrusted.
+
 ## TEE Wallet
 
 Each deployed app receives a persistent, private wallet that serves as its cryptographic identity.
@@ -163,6 +205,52 @@ from eth_account import Account
 Account.enable_unaudited_hdwallet_features()
 account = Account.from_mnemonic(os.environ['MNEMONIC'])
 ```
+
+## Attestation and Verifiability
+
+EigenCompute provides cryptographic attestation that proves which Docker image is running inside the TEE. Understanding this model is critical for maintaining verifiability.
+
+### How Attestation Works
+
+1. When you deploy, the **Docker image digest** (sha256 hash) is recorded on-chain
+2. The TEE generates a cryptographic proof that this exact image has access to the wallet
+3. Anyone can verify on the [Verifiability Dashboard](https://verify-sepolia.eigencloud.xyz) that the running code matches the attested image
+
+### The Trust Anchors
+
+| Anchor | What It Proves | Persistence |
+|--------|----------------|-------------|
+| **Wallet address** | Identity — "this is agent X" | Survives upgrades |
+| **Docker digest** | Code — "agent X runs image Y" | Changes on upgrade |
+| **TEE attestation** | Binding — "only image Y can access wallet X" | Regenerated on upgrade |
+
+### Self-Modification Breaks Verifiability
+
+The agent runs as `root` inside the container, so it *can* modify its own files at runtime. However:
+
+- The on-chain attestation still refers to the **original image digest**
+- Modified code runs **unattested** — there's no proof of what's actually executing
+- This is a **verifiability violation** that undermines the trust model
+
+**Never modify source files at runtime.** If code needs to change, use `upgrade` to deploy a new attested image.
+
+### Evolution Strategies
+
+Two patterns for agents that need to change behavior over time:
+
+**Config-Driven Evolution (Recommended)**
+- Same Docker image, behavior changes through external config/data
+- Attestation remains valid — code is unchanged
+- Load configuration from external storage using signed-state pattern
+- Example: skill weights, prompt templates, routing rules
+
+**Upgrade-Mediated Evolution**
+- New Docker image deployed via `ecloud compute app upgrade`
+- New attestation generated for new image
+- Wallet and grants preserved — identity continuity
+- Example: bug fixes, new features, dependency updates
+
+Config-driven evolution is preferred because it requires no image rebuilds and maintains a single attested codebase.
 
 ## CLI Commands
 
@@ -430,9 +518,22 @@ docker push username/eigenskills-agent:latest
 
 ## Key Constraints
 
+### Build Requirements
 - Docker image **must** target `linux/amd64`
 - Application **must** run as `root` (TEE requirement)
+
+### Wallet Lifecycle
 - `MNEMONIC` is auto-injected — do not set manually
-- `terminate` is irreversible — wallet is destroyed
-- `stop` preserves wallet and usually IP, but in-memory state is lost
-- Encrypted env vars are only accessible inside the TEE — handle securely, do not exfiltrate
+- `terminate` is irreversible — wallet is destroyed forever
+- `upgrade` preserves wallet — use for code/config updates
+- `stop`/`start` preserves wallet and usually IP
+
+### Storage and State
+- **No persistent storage** — filesystem wiped on stop/start/upgrade
+- In-memory state is lost on any restart — use external storage
+- Encrypted env vars are only accessible inside the TEE — do not exfiltrate
+
+### Verifiability
+- Attestation is **Docker-digest-specific** — proves exact image
+- Runtime file modifications run **unattested** — avoid self-editing code
+- Config-driven evolution preserves attestation; upgrade-mediated generates new attestation
