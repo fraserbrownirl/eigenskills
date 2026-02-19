@@ -2,10 +2,20 @@ import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdtempSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { randomUUID } from "crypto";
 
 const EIGENCOMPUTE_PRIVATE_KEY = process.env.EIGENCOMPUTE_PRIVATE_KEY ?? "";
 const EIGENCOMPUTE_ENVIRONMENT = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
 const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "eigenskills/agent:latest";
+
+// GitHub Actions deployment
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
+const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER ?? "fraserbrownirl";
+const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME ?? "eigenskills-v2";
+const BACKEND_WEBHOOK_URL = process.env.BACKEND_WEBHOOK_URL ?? "";
+
+// Use GitHub Actions for deploy/upgrade (Railway doesn't have Docker)
+const USE_GITHUB_ACTIONS = process.env.USE_GITHUB_ACTIONS !== "false";
 
 // Validation patterns
 const SAFE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
@@ -182,14 +192,107 @@ function runEcloudCommand(
 }
 
 /**
+ * Result of triggering a GitHub Actions deployment.
+ * The actual deployment completes asynchronously via webhook callback.
+ */
+export interface AsyncDeployResult {
+  dispatchId: string;
+  pending: true;
+}
+
+/**
+ * Trigger a GitHub Actions workflow to deploy/upgrade an agent.
+ * Returns a dispatch ID that can be used to track the deployment status.
+ */
+export async function triggerGitHubDeploy(
+  action: "deploy-agent" | "upgrade-agent",
+  payload: {
+    appName: string;
+    appId?: string;
+    envVars: EnvVar[];
+  }
+): Promise<AsyncDeployResult> {
+  if (!GITHUB_TOKEN) {
+    throw new Error(
+      "GITHUB_TOKEN is not set. Create a GitHub token with 'repo' scope and add it to backend/.env"
+    );
+  }
+
+  if (!BACKEND_WEBHOOK_URL) {
+    throw new Error(
+      "BACKEND_WEBHOOK_URL is not set. Add your backend's public URL to backend/.env"
+    );
+  }
+
+  const dispatchId = randomUUID();
+
+  // Build env vars as base64-encoded .env file content
+  const envLines: string[] = [];
+  for (const { key, value, isPublic } of payload.envVars) {
+    validateEnvVar(key, value);
+    const envKey = isPublic && !key.endsWith("_PUBLIC") ? `${key}_PUBLIC` : key;
+    envLines.push(`${envKey}=${escapeEnvValue(value)}`);
+  }
+  const envVarsBase64 = Buffer.from(envLines.join("\n") + "\n").toString("base64");
+
+  const response = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/dispatches`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        event_type: action,
+        client_payload: {
+          dispatch_id: dispatchId,
+          app_name: payload.appName,
+          app_id: payload.appId ?? "",
+          image_ref: AGENT_IMAGE_REF,
+          environment: EIGENCOMPUTE_ENVIRONMENT,
+          env_vars: envVarsBase64,
+          callback_url: `${BACKEND_WEBHOOK_URL}/api/webhook/deploy-result`,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`GitHub Actions dispatch failed: ${response.status} ${errorText}`);
+  }
+
+  console.log(`Triggered ${action} workflow with dispatch_id: ${dispatchId}`);
+  return { dispatchId, pending: true };
+}
+
+/**
  * Deploy a new agent instance to EigenCompute.
  *
- * In production, this would call the EigenCompute REST API directly.
- * For now, it shells out to the ecloud CLI.
+ * When USE_GITHUB_ACTIONS is true (default), this triggers a GitHub Actions
+ * workflow that runs the ecloud CLI. The actual deployment completes async
+ * and results are delivered via webhook.
+ *
+ * When USE_GITHUB_ACTIONS is false (local dev with Docker), this shells out
+ * to the ecloud CLI directly.
  */
-export async function deployAgent(name: string, envVars: EnvVar[]): Promise<DeployResult> {
+export async function deployAgent(
+  name: string,
+  envVars: EnvVar[]
+): Promise<DeployResult | AsyncDeployResult> {
   const safeName = validateShellInput(name, "agent name");
 
+  // Use GitHub Actions for deployment (Railway doesn't have Docker)
+  if (USE_GITHUB_ACTIONS) {
+    return triggerGitHubDeploy("deploy-agent", {
+      appName: safeName,
+      envVars,
+    });
+  }
+
+  // Direct CLI deployment (local dev with Docker)
   if (!EIGENCOMPUTE_PRIVATE_KEY) {
     throw new Error(
       "EIGENCOMPUTE_PRIVATE_KEY is not set. " +
@@ -244,6 +347,15 @@ export async function deployAgent(name: string, envVars: EnvVar[]): Promise<Depl
       // ignore cleanup errors
     }
   }
+}
+
+/**
+ * Check if a deploy result is async (pending webhook callback).
+ */
+export function isAsyncDeployResult(
+  result: DeployResult | AsyncDeployResult
+): result is AsyncDeployResult {
+  return "pending" in result && result.pending === true;
 }
 
 export interface AppInfo {
@@ -314,8 +426,22 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
  * Wallet address, grants, and instance IP are preserved across upgrades.
  * A new cryptographic attestation is generated for the updated image.
  */
-export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<void> {
+export async function upgradeAgent(
+  appId: string,
+  envVars: EnvVar[]
+): Promise<void | AsyncDeployResult> {
   const safeAppId = validateShellInput(appId, "app ID");
+
+  // Use GitHub Actions for upgrade (Railway doesn't have Docker)
+  if (USE_GITHUB_ACTIONS) {
+    return triggerGitHubDeploy("upgrade-agent", {
+      appName: safeAppId,
+      appId: safeAppId,
+      envVars,
+    });
+  }
+
+  // Direct CLI upgrade (local dev with Docker)
   const envFilePath = buildEnvFile(envVars);
 
   try {

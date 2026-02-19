@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { deployAgent, getGrantStatus, type EnvVar } from "@/lib/api";
+import { deployAgent, getGrantStatus, pollDeployStatus, type EnvVar } from "@/lib/api";
 import { signEigenAIGrant, getConnectedAccount } from "@/lib/wallet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,9 +109,12 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
     setEnvVars(envVars.map((v, i) => (i === index ? { ...v, [field]: value } : v)));
   }
 
+  const [deployProgress, setDeployProgress] = useState<string | null>(null);
+
   async function handleDeploy() {
     setDeploying(true);
     setError(null);
+    setDeployProgress(null);
 
     try {
       // Build env vars including grant credentials if signed
@@ -141,12 +144,42 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
         );
       }
 
-      await deployAgent(token, name, allVars);
+      const result = await deployAgent(token, name, allVars);
+
+      // Handle async deployment (GitHub Actions)
+      if (result.pending && result.dispatchId) {
+        setDeployProgress("Deployment started. Waiting for EigenCompute to provision your agent...");
+
+        const finalStatus = await pollDeployStatus(
+          token,
+          result.dispatchId,
+          (status) => {
+            if (status.status === "pending") {
+              const elapsed = status.createdAt
+                ? Math.floor((Date.now() - new Date(status.createdAt).getTime()) / 1000)
+                : 0;
+              setDeployProgress(
+                `Deploying to EigenCompute... (${elapsed}s elapsed)`
+              );
+            }
+          },
+          300000,
+          5000
+        );
+
+        if (finalStatus.status === "error") {
+          throw new Error(finalStatus.error || "Deployment failed");
+        }
+
+        setDeployProgress("Deployment complete!");
+      }
+
       onDeployed();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deployment failed");
     } finally {
       setDeploying(false);
+      setDeployProgress(null);
     }
   }
 
@@ -545,13 +578,21 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                 {deploying ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Deploying...
+                    {deployProgress ? "Deploying..." : "Starting..."}
                   </>
                 ) : (
                   "Deploy Agent"
                 )}
               </Button>
             </CardFooter>
+            {deployProgress && (
+              <div className="px-6 pb-6">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  <span>{deployProgress}</span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </Card>

@@ -33,7 +33,12 @@ import {
   createTelegramLinkCode,
   getTelegramLinkByUser,
   unlinkTelegram,
+  createPendingDeploy,
+  getPendingDeploy,
+  getPendingDeployByUser,
+  completePendingDeploy,
   type MemoryRow,
+  type PendingDeployRow,
 } from "./db.js";
 import { initTelegramBot, sendTelegramMessage } from "./telegram.js";
 import {
@@ -44,7 +49,10 @@ import {
   terminateAgent,
   getAppInfo,
   getAppLogs,
+  isAsyncDeployResult,
+  type AsyncDeployResult,
 } from "./eigencompute.js";
+import { createHmac, timingSafeEqual } from "crypto";
 import { encryptEnvVars, decryptEnvVars } from "./envVarsEncrypt.js";
 
 // Request validation schemas
@@ -327,6 +335,16 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       return;
     }
 
+    // Check for pending deploy
+    const pendingDeploy = getPendingDeployByUser(userAddress);
+    if (pendingDeploy) {
+      res.status(409).json({
+        error: "You have a deployment in progress. Please wait for it to complete.",
+        dispatchId: pendingDeploy.dispatch_id,
+      });
+      return;
+    }
+
     // Create agent record
     agentId = createAgent(userAddress, name);
 
@@ -335,6 +353,28 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
     const ecloudName = `eigenskills-${userAddress.slice(2, 10)}`;
     const result = await deployAgent(ecloudName, envVars);
 
+    // Handle async deployment (GitHub Actions)
+    if (isAsyncDeployResult(result)) {
+      // Store env vars and mark as deploying
+      updateAgent(agentId, {
+        ecloud_name: ecloudName,
+        status: "deploying",
+        env_vars: encryptEnvVars(JSON.stringify(envVars)),
+      });
+
+      // Track the pending deploy
+      createPendingDeploy(result.dispatchId, userAddress, agentId, "deploy");
+
+      res.json({
+        agentId,
+        pending: true,
+        dispatchId: result.dispatchId,
+        message: "Deployment started. This may take 1-2 minutes.",
+      });
+      return;
+    }
+
+    // Handle sync deployment (local dev with Docker)
     // The deploy output does not include Instance IP or sometimes
     // Docker Digest. Fetch them via `ecloud compute app info`.
     let { instanceIp, dockerDigest, walletAddressEth, walletAddressSol } = result;
@@ -374,6 +414,146 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       updateAgent(agentId, { status: "terminated" });
     }
     res.status(500).json({ error: "Deployment failed" });
+  }
+});
+
+// GET /api/agents/deploy-status — check async deploy status
+app.get("/api/agents/deploy-status", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const dispatchId = typeof req.query.dispatchId === "string" ? req.query.dispatchId : undefined;
+
+    let pendingDeploy: PendingDeployRow | undefined;
+    if (dispatchId) {
+      pendingDeploy = getPendingDeploy(dispatchId);
+      if (pendingDeploy && pendingDeploy.user_address !== userAddress.toLowerCase()) {
+        res.status(403).json({ error: "Not authorized to view this deployment" });
+        return;
+      }
+    } else {
+      pendingDeploy = getPendingDeployByUser(userAddress);
+    }
+
+    if (!pendingDeploy) {
+      res.json({ status: "not_found" });
+      return;
+    }
+
+    if (pendingDeploy.status === "pending") {
+      res.json({
+        status: "pending",
+        dispatchId: pendingDeploy.dispatch_id,
+        action: pendingDeploy.action,
+        createdAt: pendingDeploy.created_at,
+      });
+      return;
+    }
+
+    // Completed (success or error)
+    const agent = pendingDeploy.agent_id ? getAgentByUser(userAddress) : undefined;
+    res.json({
+      status: pendingDeploy.status,
+      dispatchId: pendingDeploy.dispatch_id,
+      action: pendingDeploy.action,
+      error: pendingDeploy.error_message,
+      completedAt: pendingDeploy.completed_at,
+      agent: agent
+        ? {
+            id: agent.id,
+            appId: agent.app_id,
+            walletAddress: agent.wallet_address_eth,
+            instanceIp: agent.instance_ip,
+            status: agent.status,
+          }
+        : undefined,
+    });
+  } catch (error) {
+    console.error("Deploy status error:", error);
+    res.status(500).json({ error: "Failed to get deploy status" });
+  }
+});
+
+// Webhook secret for verifying GitHub Actions callbacks
+const DEPLOY_WEBHOOK_SECRET = process.env.DEPLOY_WEBHOOK_SECRET ?? "";
+
+// POST /api/webhook/deploy-result — callback from GitHub Actions
+app.post("/api/webhook/deploy-result", express.json(), async (req, res) => {
+  try {
+    // Verify webhook signature
+    const signature = req.headers["x-webhook-signature"];
+    const timestamp = req.headers["x-webhook-timestamp"];
+
+    if (!signature || typeof signature !== "string" || !DEPLOY_WEBHOOK_SECRET) {
+      console.warn("Webhook missing signature or secret not configured");
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    // Reconstruct payload and verify HMAC
+    const payload = JSON.stringify(req.body);
+    const expectedSig = createHmac("sha256", DEPLOY_WEBHOOK_SECRET).update(payload).digest("hex");
+
+    const sigBuffer = Buffer.from(signature.replace("sha256=", ""), "hex");
+    const expectedBuffer = Buffer.from(expectedSig, "hex");
+
+    if (sigBuffer.length !== expectedBuffer.length || !timingSafeEqual(sigBuffer, expectedBuffer)) {
+      console.warn("Webhook signature mismatch");
+      res.status(401).json({ error: "Invalid signature" });
+      return;
+    }
+
+    // Check timestamp (5 minute window)
+    const ts = parseInt(timestamp as string, 10);
+    if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+      console.warn("Webhook timestamp out of range");
+      res.status(401).json({ error: "Timestamp expired" });
+      return;
+    }
+
+    const {
+      dispatch_id,
+      status,
+      error,
+      app_id,
+      wallet_address_eth,
+      wallet_address_sol,
+      instance_ip,
+      docker_digest,
+    } = req.body;
+
+    console.log(`Received deploy webhook: dispatch_id=${dispatch_id}, status=${status}`);
+
+    // Get pending deploy record
+    const pendingDeploy = getPendingDeploy(dispatch_id);
+    if (!pendingDeploy) {
+      console.warn(`Unknown dispatch_id: ${dispatch_id}`);
+      res.status(404).json({ error: "Unknown dispatch_id" });
+      return;
+    }
+
+    // Update pending deploy status
+    completePendingDeploy(dispatch_id, status === "success" ? "success" : "error", error || null);
+
+    // Update agent record if deploy succeeded
+    if (status === "success" && pendingDeploy.agent_id) {
+      updateAgent(pendingDeploy.agent_id, {
+        app_id: app_id || undefined,
+        wallet_address_eth: wallet_address_eth || undefined,
+        wallet_address_sol: wallet_address_sol || undefined,
+        instance_ip: instance_ip || undefined,
+        docker_digest: docker_digest || undefined,
+        status: "running",
+      });
+      console.log(`Agent ${pendingDeploy.agent_id} deployed successfully: app_id=${app_id}`);
+    } else if (status !== "success" && pendingDeploy.agent_id) {
+      updateAgent(pendingDeploy.agent_id, { status: "terminated" });
+      console.log(`Agent ${pendingDeploy.agent_id} deploy failed: ${error}`);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Webhook processing error:", err);
+    res.status(500).json({ error: "Webhook processing failed" });
   }
 });
 

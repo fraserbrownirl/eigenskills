@@ -94,6 +94,21 @@ const SCHEMA_SQL = `
     updated_at TEXT DEFAULT (datetime('now')),
     UNIQUE(user_address, filename)
   );
+
+  CREATE TABLE IF NOT EXISTS pending_deploys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dispatch_id TEXT NOT NULL UNIQUE,
+    user_address TEXT NOT NULL REFERENCES users(address),
+    agent_id INTEGER REFERENCES agents(id),
+    action TEXT NOT NULL CHECK (action IN ('deploy', 'upgrade')),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'success', 'error')),
+    error_message TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pending_deploys_dispatch ON pending_deploys(dispatch_id);
+  CREATE INDEX IF NOT EXISTS idx_pending_deploys_user ON pending_deploys(user_address);
 `;
 
 /**
@@ -227,6 +242,18 @@ export interface TelegramLinkRow {
   telegram_chat_id: string;
   link_code: string | null;
   linked_at: string;
+}
+
+export interface PendingDeployRow {
+  id: number;
+  dispatch_id: string;
+  user_address: string;
+  agent_id: number | null;
+  action: "deploy" | "upgrade";
+  status: "pending" | "success" | "error";
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
 }
 
 export interface DbOperations {
@@ -563,6 +590,49 @@ export function createDbOperations(database: Database.Database): DbOperations {
         .run(userAddress.toLowerCase());
       return result.changes > 0;
     },
+
+    createPendingDeploy(
+      dispatchId: string,
+      userAddress: string,
+      agentId: number | null,
+      action: "deploy" | "upgrade"
+    ): void {
+      database
+        .prepare(
+          `INSERT INTO pending_deploys (dispatch_id, user_address, agent_id, action)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(dispatchId, userAddress.toLowerCase(), agentId, action);
+    },
+
+    getPendingDeploy(dispatchId: string): PendingDeployRow | undefined {
+      return database
+        .prepare("SELECT * FROM pending_deploys WHERE dispatch_id = ?")
+        .get(dispatchId) as PendingDeployRow | undefined;
+    },
+
+    getPendingDeployByUser(userAddress: string): PendingDeployRow | undefined {
+      return database
+        .prepare(
+          "SELECT * FROM pending_deploys WHERE user_address = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 1"
+        )
+        .get(userAddress.toLowerCase()) as PendingDeployRow | undefined;
+    },
+
+    completePendingDeploy(
+      dispatchId: string,
+      status: "success" | "error",
+      errorMessage?: string
+    ): boolean {
+      const result = database
+        .prepare(
+          `UPDATE pending_deploys 
+           SET status = ?, error_message = ?, completed_at = datetime('now')
+           WHERE dispatch_id = ?`
+        )
+        .run(status, errorMessage ?? null, dispatchId);
+      return result.changes > 0;
+    },
   };
 }
 
@@ -595,5 +665,9 @@ export const completeTelegramLink = ops.completeTelegramLink;
 export const getTelegramLink = ops.getTelegramLink;
 export const getTelegramLinkByUser = ops.getTelegramLinkByUser;
 export const unlinkTelegram = ops.unlinkTelegram;
+export const createPendingDeploy = ops.createPendingDeploy;
+export const getPendingDeploy = ops.getPendingDeploy;
+export const getPendingDeployByUser = ops.getPendingDeployByUser;
+export const completePendingDeploy = ops.completePendingDeploy;
 
 export default db;

@@ -1,0 +1,135 @@
+name: Deploy Agent to EigenCompute
+
+on:
+  repository_dispatch:
+    types: [deploy-agent, upgrade-agent]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ecloud CLI
+        run: npm install -g @layr-labs/ecloud-cli
+
+      - name: Write env file
+        run: |
+          echo '${{ github.event.client_payload.env_vars }}' | base64 -d > /tmp/agent.env
+
+      - name: Deploy or Upgrade
+        id: deploy
+        env:
+          ECLOUD_PRIVATE_KEY: ${{ secrets.EIGENCOMPUTE_PRIVATE_KEY }}
+        run: |
+          set -e
+          
+          ACTION="${{ github.event.action }}"
+          APP_NAME="${{ github.event.client_payload.app_name }}"
+          APP_ID="${{ github.event.client_payload.app_id }}"
+          IMAGE_REF="${{ github.event.client_payload.image_ref }}"
+          ENVIRONMENT="${{ github.event.client_payload.environment }}"
+          
+          if [ "$ACTION" = "deploy-agent" ]; then
+            echo "Deploying new agent: $APP_NAME"
+            OUTPUT=$(echo N | ecloud compute app deploy \
+              --image-ref "$IMAGE_REF" \
+              --env-file /tmp/agent.env \
+              --environment "$ENVIRONMENT" \
+              --log-visibility public \
+              --resource-usage-monitoring enable \
+              --instance-type g1-standard-4t \
+              --skip-profile \
+              --name "$APP_NAME" 2>&1) || true
+          else
+            echo "Upgrading agent: $APP_ID"
+            OUTPUT=$(echo N | ecloud compute app upgrade "$APP_ID" \
+              --image-ref "$IMAGE_REF" \
+              --env-file /tmp/agent.env \
+              --environment "$ENVIRONMENT" 2>&1) || true
+          fi
+          
+          echo "Raw output:"
+          echo "$OUTPUT"
+          
+          # Parse output for app details
+          APP_ID_PARSED=$(echo "$OUTPUT" | grep -iE 'App ID:|ID:' | head -1 | grep -oE '0x[a-fA-F0-9]+' || echo "")
+          ETH_ADDR=$(echo "$OUTPUT" | grep -iE 'EVM Address:|Ethereum:' | grep -oE '0x[a-fA-F0-9]+' || echo "")
+          SOL_ADDR=$(echo "$OUTPUT" | grep -iE 'Solana Address:|Solana:' | awk '{print $NF}' || echo "")
+          INSTANCE_IP=$(echo "$OUTPUT" | grep -iE '\bIP:' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+          DOCKER_DIGEST=$(echo "$OUTPUT" | grep -i 'Docker Digest:' | awk '{print $NF}' || echo "")
+          
+          # Check for errors
+          if echo "$OUTPUT" | grep -qi "error"; then
+            echo "error=true" >> $GITHUB_OUTPUT
+            echo "error_message=$(echo "$OUTPUT" | grep -i error | head -1)" >> $GITHUB_OUTPUT
+          else
+            echo "error=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Use provided app_id for upgrades if parsing failed
+          if [ -z "$APP_ID_PARSED" ] && [ -n "$APP_ID" ]; then
+            APP_ID_PARSED="$APP_ID"
+          fi
+          
+          echo "app_id=$APP_ID_PARSED" >> $GITHUB_OUTPUT
+          echo "wallet_eth=$ETH_ADDR" >> $GITHUB_OUTPUT
+          echo "wallet_sol=$SOL_ADDR" >> $GITHUB_OUTPUT
+          echo "instance_ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+          echo "docker_digest=$DOCKER_DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Cleanup env file
+        if: always()
+        run: rm -f /tmp/agent.env
+
+      - name: Callback to backend
+        if: always()
+        env:
+          WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+        run: |
+          DISPATCH_ID="${{ github.event.client_payload.dispatch_id }}"
+          CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
+          
+          if [ "${{ steps.deploy.outputs.error }}" = "true" ]; then
+            STATUS="error"
+            ERROR_MSG="${{ steps.deploy.outputs.error_message }}"
+          else
+            STATUS="success"
+            ERROR_MSG=""
+          fi
+          
+          # Create HMAC signature for webhook verification
+          TIMESTAMP=$(date +%s)
+          PAYLOAD=$(cat <<EOF
+          {
+            "dispatch_id": "$DISPATCH_ID",
+            "status": "$STATUS",
+            "error": "$ERROR_MSG",
+            "app_id": "${{ steps.deploy.outputs.app_id }}",
+            "wallet_address_eth": "${{ steps.deploy.outputs.wallet_eth }}",
+            "wallet_address_sol": "${{ steps.deploy.outputs.wallet_sol }}",
+            "instance_ip": "${{ steps.deploy.outputs.instance_ip }}",
+            "docker_digest": "${{ steps.deploy.outputs.docker_digest }}",
+            "timestamp": $TIMESTAMP
+          }
+          EOF
+          )
+          
+          SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
+          
+          curl -X POST "$CALLBACK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Signature: sha256=$SIGNATURE" \
+            -H "X-Webhook-Timestamp: $TIMESTAMP" \
+            -d "$PAYLOAD" \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5

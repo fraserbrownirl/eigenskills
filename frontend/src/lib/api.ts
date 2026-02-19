@@ -74,11 +74,37 @@ export async function getGrantStatus(address: string): Promise<{
   };
 }
 
+export interface DeployResponse {
+  agentId: number;
+  appId?: string;
+  walletAddress?: string;
+  instanceIp?: string;
+  pending?: boolean;
+  dispatchId?: string;
+  message?: string;
+}
+
+export interface DeployStatusResponse {
+  status: "pending" | "success" | "error" | "not_found";
+  dispatchId?: string;
+  action?: "deploy" | "upgrade";
+  error?: string;
+  createdAt?: string;
+  completedAt?: string;
+  agent?: {
+    id: number;
+    appId: string | null;
+    walletAddress: string | null;
+    instanceIp: string | null;
+    status: string;
+  };
+}
+
 export async function deployAgent(
   token: string,
   name: string,
   envVars: EnvVar[]
-): Promise<{ agentId: number; appId: string; walletAddress: string; instanceIp: string }> {
+): Promise<DeployResponse> {
   const res = await fetch(`${BACKEND_URL}/api/agents/deploy`, {
     method: "POST",
     headers: getHeaders(token),
@@ -89,6 +115,46 @@ export async function deployAgent(
     throw new Error(err.error ?? "Deploy failed");
   }
   return res.json();
+}
+
+export async function getDeployStatus(
+  token: string,
+  dispatchId?: string
+): Promise<DeployStatusResponse> {
+  const url = dispatchId
+    ? `${BACKEND_URL}/api/agents/deploy-status?dispatchId=${encodeURIComponent(dispatchId)}`
+    : `${BACKEND_URL}/api/agents/deploy-status`;
+  const res = await fetch(url, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to get deploy status");
+  }
+  return res.json();
+}
+
+export async function pollDeployStatus(
+  token: string,
+  dispatchId: string,
+  onProgress?: (status: DeployStatusResponse) => void,
+  maxWaitMs: number = 300000,
+  intervalMs: number = 3000
+): Promise<DeployStatusResponse> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    const status = await getDeployStatus(token, dispatchId);
+    onProgress?.(status);
+
+    if (status.status !== "pending") {
+      return status;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  throw new Error("Deploy timed out");
 }
 
 export async function upgradeAgent(token: string, envVars: EnvVar[]): Promise<void> {
