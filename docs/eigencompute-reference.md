@@ -399,9 +399,82 @@ Profile fields appear on the Verifiability Dashboard:
 
 ## Programmatic Usage (Node.js)
 
-When invoking `ecloud` CLI commands from Node.js (e.g., via `execSync`), several issues arise due to the CLI's interactive nature.
+### Recommended: `@layr-labs/ecloud-sdk` (No Docker Required)
 
-### Non-Interactive Prompts
+The official TypeScript SDK (`@layr-labs/ecloud-sdk`) provides a programmatic API for all EigenCompute operations. It handles KMS encryption, on-chain transactions, and UserAPI calls internally — **no Docker daemon or CLI binary needed**.
+
+This is the default deploy strategy in `backend/src/eigencompute-sdk.ts`.
+
+```typescript
+import { createECloudClient } from "@layr-labs/ecloud-sdk";
+
+const client = createECloudClient({
+  verbose: false,
+  privateKey: "0x...",        // EIGENCOMPUTE_PRIVATE_KEY
+  environment: "sepolia",     // or "mainnet-alpha"
+  // rpcUrl: "..."            // optional custom RPC
+});
+
+// Deploy using pre-built image (no Docker needed)
+const { prepared, gasEstimate } = await client.compute.app.prepareDeployFromVerifiableBuild({
+  name: "my-agent",
+  imageRef: "username/myimage:latest",
+  imageDigest: "sha256:abc123...",   // from Docker Hub API
+  envFile: "/path/to/.env",
+  instanceType: "g1-standard-4t",
+  logVisibility: "public",
+  resourceUsageMonitoring: "enable",
+});
+
+const result = await client.compute.app.executeDeploy(prepared, gasEstimate);
+const ip = await client.compute.app.watchDeployment(result.appId);
+
+// Lifecycle
+await client.compute.app.stop(result.appId);
+await client.compute.app.start(result.appId);
+await client.compute.app.terminate(result.appId);
+
+// Upgrade (also Docker-free)
+const upgrade = await client.compute.app.prepareUpgradeFromVerifiableBuild(appId, {
+  imageRef: "username/myimage:v2",
+  imageDigest: "sha256:def456...",
+  envFile: "/path/to/.env",
+  instanceType: "g1-standard-4t",
+  logVisibility: "public",
+});
+await client.compute.app.executeUpgrade(upgrade.prepared, upgrade.gasEstimate);
+await client.compute.app.watchUpgrade(appId);
+```
+
+#### Getting the Image Digest (No Docker)
+
+The image digest can be fetched from Docker Hub's API without needing Docker installed:
+
+```typescript
+async function getImageDigest(imageRef: string): Promise<string> {
+  const [repo, tag = "latest"] = imageRef.split(":");
+  const res = await fetch(`https://hub.docker.com/v2/repositories/${repo}/tags/${tag}`);
+  const data = await res.json();
+  const amd64 = data.images?.find((i: any) => i.architecture === "amd64");
+  return amd64?.digest ?? data.digest;
+}
+```
+
+#### Deploy Strategies
+
+The backend supports three deploy strategies via `DEPLOY_STRATEGY` env var:
+
+| Strategy | Value | Docker? | Description |
+|----------|-------|---------|-------------|
+| SDK (default) | `sdk` | No | `@layr-labs/ecloud-sdk` — direct TypeScript, works anywhere |
+| GitHub Actions | `github-actions` | No (on host) | Triggers workflow, async webhook callback |
+| CLI | `cli` | Yes | Shells out to `ecloud` CLI binary |
+
+### Legacy: `ecloud` CLI Usage
+
+When using the CLI directly from Node.js (strategy `cli`), several issues arise:
+
+#### Non-Interactive Prompts
 
 The `ecloud` CLI uses Inquirer.js for interactive prompts. When run non-interactively, it throws:
 
@@ -409,90 +482,23 @@ The `ecloud` CLI uses Inquirer.js for interactive prompts. When run non-interact
 ExitPromptError: User force closed the prompt with 13 null
 ```
 
-**Solution:** Pipe `echo N |` to auto-answer prompts (e.g., "Build from verifiable source?"):
+**Solution:** Pipe `echo N |` to auto-answer prompts. Do NOT use `yes N |` — it causes `ENOBUFS` buffer overflow.
 
-```typescript
-import { execSync } from "child_process";
+#### Image Reference as Flag
 
-// Auto-answer the "Build from verifiable source?" prompt with "N"
-const output = execSync(`echo N | ecloud compute app deploy --image-ref myimage:latest ...`);
-```
-
-**Important:** Do NOT use `yes N |` — it produces infinite output and causes `ENOBUFS` buffer overflow errors.
-
-### Image Reference as Flag
-
-The oclif-based CLI misinterprets colons in positional arguments (e.g., `myimage:latest` is parsed as a subcommand). Always use the `--image-ref` flag:
+The oclif-based CLI misinterprets colons in positional arguments. Always use `--image-ref`:
 
 ```bash
-# WRONG — CLI interprets colon as command separator
+# WRONG
 ecloud compute app deploy myregistry/myimage:latest
 
-# CORRECT — use flag
+# CORRECT
 ecloud compute app deploy --image-ref myregistry/myimage:latest
 ```
 
-### Private Key Handling
+#### Private Key Handling
 
-Pass the private key explicitly via `--private-key` flag. The environment variable `ECLOUD_PRIVATE_KEY` may not be picked up in all contexts.
-
-**Critical:** Sanitize error messages to prevent private key exposure in logs:
-
-```typescript
-function execWithSanitizedErrors(command: string, options: ExecSyncOptions): Buffer {
-  try {
-    return execSync(command, options);
-  } catch (err: any) {
-    // Redact private key from error messages
-    const sanitized = (err.message || "")
-      .replace(/--private-key\s+\S+/g, "--private-key [REDACTED]");
-    throw new Error(sanitized);
-  }
-}
-```
-
-### Complete Example
-
-```typescript
-import { execSync, ExecSyncOptions } from "child_process";
-import { writeFileSync, unlinkSync } from "fs";
-import { randomBytes } from "crypto";
-
-const EIGENCOMPUTE_PRIVATE_KEY = process.env.EIGENCOMPUTE_PRIVATE_KEY;
-const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF; // e.g., "username/eigenskills-agent:latest"
-
-function deployAgent(name: string, envVars: Record<string, string>) {
-  if (!EIGENCOMPUTE_PRIVATE_KEY) {
-    throw new Error("EIGENCOMPUTE_PRIVATE_KEY not set");
-  }
-
-  // Write env vars to temp file
-  const envFile = `/tmp/env-${randomBytes(8).toString("hex")}`;
-  const envContent = Object.entries(envVars)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n");
-  writeFileSync(envFile, envContent);
-
-  const command = `echo N | ecloud compute app deploy \
-    --image-ref ${AGENT_IMAGE_REF} \
-    --env-file ${envFile} \
-    --environment sepolia \
-    --private-key ${EIGENCOMPUTE_PRIVATE_KEY} \
-    --log-visibility public \
-    --name ${name}`;
-
-  try {
-    const output = execSync(command, { encoding: "utf8" });
-    return parseDeployOutput(output);
-  } catch (err: any) {
-    const sanitized = (err.message || "")
-      .replace(/--private-key\s+\S+/g, "--private-key [REDACTED]");
-    throw new Error(`Deploy failed: ${sanitized}`);
-  } finally {
-    unlinkSync(envFile);
-  }
-}
-```
+Pass the private key explicitly via `--private-key` flag. Always sanitize error messages to prevent private key exposure in logs.
 
 ### Docker Image Requirements
 
@@ -501,10 +507,7 @@ The agent image must be:
 2. **Pushed to a public registry** — EigenCompute pulls from Docker Hub
 
 ```bash
-# Build for correct platform
 docker build --platform linux/amd64 -t username/eigenskills-agent:latest ./agent
-
-# Push to Docker Hub
 docker push username/eigenskills-agent:latest
 ```
 
@@ -515,6 +518,8 @@ docker push username/eigenskills-agent:latest
 | `EIGENCOMPUTE_PRIVATE_KEY` | Private key for signing deploy transactions |
 | `AGENT_IMAGE_REF` | Docker image reference (e.g., `username/myagent:latest`) |
 | `EIGENCOMPUTE_ENVIRONMENT` | `sepolia` or `mainnet-alpha` |
+| `DEPLOY_STRATEGY` | `sdk` (default), `github-actions`, or `cli` |
+| `EIGENCOMPUTE_RPC_URL` | Optional custom RPC endpoint |
 
 ## Key Constraints
 

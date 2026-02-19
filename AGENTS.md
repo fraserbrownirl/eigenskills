@@ -34,7 +34,8 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 | `src/index.ts` | Express server + all API routes | App startup, 8 route handlers |
 | `src/auth.ts` | SIWE verification + HMAC session tokens | `verifySiweMessage()`, `createToken()`, `requireAuth` middleware |
 | `src/db.ts` | SQLite database (users + agents tables) | `createUser()`, `createAgent()`, `getAgentByUser()`, `updateAgent()` |
-| `src/eigencompute.ts` | EigenCompute CLI wrapper | `deployApp()`, `upgradeApp()`, `stopApp()`, `startApp()`, `terminateApp()`, `getAppInfo()` |
+| `src/eigencompute.ts` | Deploy strategy router (SDK / GitHub Actions / CLI) | `deployAgent()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()`, `getAppInfo()` |
+| `src/eigencompute-sdk.ts` | Direct `@layr-labs/ecloud-sdk` integration (no Docker, no CLI) | `deployAgent()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()` |
 
 ### Frontend (`frontend/src/`)
 
@@ -105,7 +106,8 @@ Frontend                    Backend                     Agent (TEE)
 - Sandboxed skill execution (restricted env vars)
 - Signed execution logging
 - SIWE authentication (frontend + backend)
-- EigenCompute CLI integration (deploy, upgrade, stop, start, terminate)
+- EigenCompute SDK integration — direct TypeScript deploys via `@layr-labs/ecloud-sdk` (no Docker daemon, no CLI)
+- Legacy CLI and GitHub Actions deploy paths preserved as fallbacks
 - 4-step agent setup wizard
 - Dashboard with status, controls, task submission
 - Skill registry with 3 skills + GitHub Action CI
@@ -141,6 +143,19 @@ Frontend                    Backend                     Agent (TEE)
 | Change database schema | `backend/src/db.ts` — add migration in `initDb()` |
 
 ## Known Gotchas
+
+### Deploy Strategy (`DEPLOY_STRATEGY` env var)
+The backend supports three deployment strategies, controlled by `DEPLOY_STRATEGY`:
+
+| Strategy | Env Value | Docker Needed? | Description |
+|----------|-----------|----------------|-------------|
+| **SDK** (default) | `sdk` | No | Uses `@layr-labs/ecloud-sdk` TypeScript package directly. Handles KMS encryption, on-chain transactions, and UserAPI calls internally. Works on any host (Fly.io, Render, Railway, local). |
+| **GitHub Actions** | `github-actions` | No (on host) | Triggers a GitHub Actions workflow that runs the `ecloud` CLI. Async — results delivered via webhook. Legacy fallback. |
+| **CLI** | `cli` | Yes | Shells out to `ecloud` CLI directly. Only works where Docker daemon is available (local dev). |
+
+The legacy `USE_GITHUB_ACTIONS=true` env var maps to `github-actions` strategy for backward compatibility.
+
+The SDK path uses `prepareDeployFromVerifiableBuild()` which explicitly skips Docker checks and image layering. It fetches the image digest from Docker Hub API, encrypts env vars via the SDK's built-in KMS encryption, and submits the on-chain transaction directly.
 
 ### Wallet: viem, not ethers
 Agent wallet uses `viem` (`mnemonicToAccount`). The `ethers` package is in dependencies but unused.

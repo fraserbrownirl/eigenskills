@@ -148,6 +148,7 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
   "https://eigenskills-v2.vercel.app",
+  "https://eigenskills.io",
 ].filter(Boolean) as string[];
 
 app.use(

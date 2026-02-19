@@ -54,15 +54,29 @@ Compare project docs with official docs, then implement fixes with citations.
 | Environment variable issues | "EigenCompute environment variables MNEMONIC encryption" |
 | Docker/TEE deployment | "EigenCompute Dockerfile requirements linux/amd64 root" |
 
+## Deploy Strategy
+
+The backend uses `DEPLOY_STRATEGY` env var to choose the deployment path:
+
+| Strategy | Value | Docker? | File |
+|----------|-------|---------|------|
+| **SDK** (default) | `sdk` | No | `backend/src/eigencompute-sdk.ts` — uses `@layr-labs/ecloud-sdk` |
+| GitHub Actions | `github-actions` | No (on host) | `backend/src/eigencompute.ts` — triggers workflow |
+| CLI | `cli` | Yes | `backend/src/eigencompute.ts` — shells out to `ecloud` CLI |
+
+**Prefer the SDK path.** It handles KMS encryption, on-chain transactions, and the UserAPI internally. The CLI and GitHub Actions paths are legacy fallbacks.
+
 ## Known Issues and Solutions
 
 | Error | Root Cause | Solution |
 |-------|------------|----------|
-| `ExitPromptError: User force closed the prompt` | CLI prompts in non-interactive mode | Pipe `echo N \|` before command |
+| `Error: Docker is not running` | CLI requires Docker daemon even for pre-built images | Use `DEPLOY_STRATEGY=sdk` (default) — no Docker needed |
+| `ExitPromptError: User force closed the prompt` | CLI prompts in non-interactive mode | Pipe `echo N \|` before command (CLI strategy only) |
 | `command compute:app:deploy:image:tag not found` | Colon parsed as oclif subcommand separator | Use `--image-ref` flag instead of positional arg |
 | `spawnSync /bin/sh ENOBUFS` | `yes N \|` infinite output overflows buffer | Use `echo N \|` instead |
 | `Failed to pull image ... 404` | Image not pushed to Docker Hub | Build with `--platform linux/amd64` and push |
 | Private key in error logs | `execSync` includes command in error message | Wrap in try/catch, sanitize with regex |
+| `EIGENCOMPUTE_PRIVATE_KEY not set` | Missing env var | Set in `.env` or Fly.io secrets |
 
 ## Do Not
 
@@ -72,3 +86,4 @@ Compare project docs with official docs, then implement fixes with citations.
 - Use `yes N |` for piping (causes buffer overflow)
 - Pass image reference as positional argument (use `--image-ref` flag)
 - Log raw `execSync` errors without sanitizing private keys
+- Use the CLI or GitHub Actions strategy when the SDK strategy works (it's simpler and more reliable)

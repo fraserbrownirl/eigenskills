@@ -28,6 +28,7 @@ Three components:
 - Skills declare `requires_env` — executor only passes those vars to subprocess
 - Auth is SIWE (Sign In With Ethereum), no passwords
 - No staking contract — curated registry is the trust model
+- **EigenCompute deploys use `@layr-labs/ecloud-sdk`** (TypeScript SDK, no Docker/CLI needed). See `backend/src/eigencompute-sdk.ts`. The `DEPLOY_STRATEGY` env var controls the path: `sdk` (default), `github-actions`, or `cli`.
 
 ## Context7 Library IDs
 
@@ -40,5 +41,5 @@ Use these when querying Context7 for docs:
 ## Reference Docs
 
 - `docs/eigenai-reference.md` — EigenAI API, tool calling, signature verification
-- `docs/eigencompute-reference.md` — Dockerfile, ecloud CLI, env vars, deploy flow
+- `docs/eigencompute-reference.md` — Dockerfile, ecloud SDK/CLI, env vars, deploy strategies
 - `docs/eigenskills-build-plan.md` — Full architecture and build sequence

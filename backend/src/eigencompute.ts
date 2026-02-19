@@ -14,8 +14,12 @@ const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER ?? "fraserbrownirl";
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME ?? "eigenskills-v2";
 const BACKEND_WEBHOOK_URL = process.env.BACKEND_WEBHOOK_URL ?? "";
 
-// Use GitHub Actions for deploy/upgrade (Railway doesn't have Docker)
-const USE_GITHUB_ACTIONS = process.env.USE_GITHUB_ACTIONS !== "false";
+// Deploy strategy: "sdk" (default) uses @layr-labs/ecloud-sdk directly (no Docker needed),
+// "github-actions" triggers a GitHub Actions workflow, "cli" shells out to ecloud CLI (needs Docker).
+const DEPLOY_STRATEGY = process.env.DEPLOY_STRATEGY ?? "sdk";
+
+// Legacy flag — maps to DEPLOY_STRATEGY for backward compatibility
+const USE_GITHUB_ACTIONS = process.env.USE_GITHUB_ACTIONS === "true";
 
 // Validation patterns
 const SAFE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
@@ -271,12 +275,10 @@ export async function triggerGitHubDeploy(
 /**
  * Deploy a new agent instance to EigenCompute.
  *
- * When USE_GITHUB_ACTIONS is true (default), this triggers a GitHub Actions
- * workflow that runs the ecloud CLI. The actual deployment completes async
- * and results are delivered via webhook.
- *
- * When USE_GITHUB_ACTIONS is false (local dev with Docker), this shells out
- * to the ecloud CLI directly.
+ * Strategy priority:
+ * 1. DEPLOY_STRATEGY=sdk (default) — uses @layr-labs/ecloud-sdk directly. No Docker, no CLI.
+ * 2. DEPLOY_STRATEGY=github-actions (or legacy USE_GITHUB_ACTIONS=true) — triggers GitHub Actions.
+ * 3. DEPLOY_STRATEGY=cli — shells out to ecloud CLI (requires Docker daemon).
  */
 export async function deployAgent(
   name: string,
@@ -284,15 +286,21 @@ export async function deployAgent(
 ): Promise<DeployResult | AsyncDeployResult> {
   const safeName = validateShellInput(name, "agent name");
 
-  // Use GitHub Actions for deployment (Railway doesn't have Docker)
-  if (USE_GITHUB_ACTIONS) {
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.deployAgent(safeName, envVars);
+  }
+
+  if (strategy === "github-actions") {
     return triggerGitHubDeploy("deploy-agent", {
       appName: safeName,
       envVars,
     });
   }
 
-  // Direct CLI deployment (local dev with Docker)
+  // CLI fallback (needs Docker daemon)
   if (!EIGENCOMPUTE_PRIVATE_KEY) {
     throw new Error(
       "EIGENCOMPUTE_PRIVATE_KEY is not set. " +
@@ -322,8 +330,6 @@ export async function deployAgent(
     const execOpts = getExecOptions(TIMEOUT_DEPLOY);
     const output = execWithSanitizedErrors(`echo N | ${command}`, execOpts);
 
-    // Parse deployment output for app details.
-    // ecloud output labels vary between versions -- try multiple patterns.
     const appIdMatch =
       output.match(/App ID:\s*(\S+)/i) ?? output.match(/\bID:\s*(0x[a-fA-F0-9]+)/i);
     const ethMatch =
@@ -381,6 +387,13 @@ const INFO_FAIL_COOLDOWN_MS = 60_000;
  */
 export async function getAppInfo(appId: string): Promise<AppInfo> {
   const safeAppId = validateShellInput(appId, "app ID");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.getAppInfo(safeAppId);
+  }
+
   const cached = appInfoCache.get(safeAppId);
   if (cached) {
     const age = Date.now() - cached.fetchedAt;
@@ -392,11 +405,6 @@ export async function getAppInfo(appId: string): Promise<AppInfo> {
   try {
     const output = runEcloudCommand("info", safeAppId, { timeout: TIMEOUT_INFO });
 
-    // ecloud app info output format (example):
-    //   IP:             203.0.113.45
-    //   EVM Address:    0xecf5...  (path: m/44'/60'/0'/0/0)
-    //   Solana Address: 6kcV4...   (path: m/44'/501'/0'/0')
-    //   Docker Digest:  sha256:... (may not always appear)
     const ipMatch = output.match(/\bIP:\s*(\d+\.\d+\.\d+\.\d+)/i);
     const digestMatch = output.match(/Docker Digest:\s*(\S+)/i);
     const ethMatch = output.match(/EVM Address:\s*(0x[a-fA-F0-9]+)/i);
@@ -431,9 +439,14 @@ export async function upgradeAgent(
   envVars: EnvVar[]
 ): Promise<void | AsyncDeployResult> {
   const safeAppId = validateShellInput(appId, "app ID");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
 
-  // Use GitHub Actions for upgrade (Railway doesn't have Docker)
-  if (USE_GITHUB_ACTIONS) {
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.upgradeAgent(safeAppId, envVars);
+  }
+
+  if (strategy === "github-actions") {
     return triggerGitHubDeploy("upgrade-agent", {
       appName: safeAppId,
       appId: safeAppId,
@@ -441,7 +454,7 @@ export async function upgradeAgent(
     });
   }
 
-  // Direct CLI upgrade (local dev with Docker)
+  // CLI fallback (needs Docker daemon)
   const envFilePath = buildEnvFile(envVars);
 
   try {
@@ -464,6 +477,13 @@ export async function upgradeAgent(
  */
 export async function stopAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.stopAgent(safeAppId);
+  }
+
   runEcloudCommand("stop", safeAppId, { interactive: true });
 }
 
@@ -472,6 +492,13 @@ export async function stopAgent(appId: string): Promise<void> {
  */
 export async function startAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.startAgent(safeAppId);
+  }
+
   runEcloudCommand("start", safeAppId, { interactive: true });
 }
 
@@ -480,6 +507,13 @@ export async function startAgent(appId: string): Promise<void> {
  */
 export async function terminateAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.terminateAgent(safeAppId);
+  }
+
   runEcloudCommand("terminate", safeAppId, { interactive: true });
 }
 
@@ -488,8 +522,14 @@ export async function terminateAgent(appId: string): Promise<void> {
  */
 export async function getAppLogs(appId: string, lines: number = 100): Promise<string> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const safeLines = Math.min(Math.max(1, Math.floor(lines)), MAX_LOG_LINES);
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
 
+  if (strategy === "sdk") {
+    const sdk = await import("./eigencompute-sdk.js");
+    return sdk.getAppLogs(safeAppId, lines);
+  }
+
+  const safeLines = Math.min(Math.max(1, Math.floor(lines)), MAX_LOG_LINES);
   return runEcloudCommand("logs", safeAppId, {
     timeout: TIMEOUT_INFO,
     extraFlags: [`--tail ${safeLines}`],

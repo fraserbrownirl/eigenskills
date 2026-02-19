@@ -8,3 +8,4 @@ dist
 .git
 __tests__
 *.test.ts
+fly.toml

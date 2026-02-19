@@ -17,8 +17,7 @@ FROM node:20-bookworm-slim AS production
 
 WORKDIR /app
 
-# Install ecloud CLI for EigenCompute
-RUN npm install -g @layr-labs/ecloud-cli
+# ecloud CLI no longer needed — @layr-labs/ecloud-sdk handles deploys directly
 
 # Production deps only
 COPY package.json package-lock.json* ./
