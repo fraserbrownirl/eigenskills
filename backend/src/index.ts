@@ -11,7 +11,30 @@ import {
   getUserAddress,
   generateNonce,
 } from "./auth.js";
-import { ensureUser, createAgent, updateAgent, getAgentByUser } from "./db.js";
+import {
+  ensureUser,
+  createAgent,
+  updateAgent,
+  getAgentByUser,
+  saveSession,
+  loadSession,
+  listSessions,
+  deleteSession,
+  saveMemory,
+  listMemory,
+  searchMemory,
+  deleteMemory,
+  createLearning,
+  listLearnings,
+  searchLearnings,
+  updateLearningStatus,
+  saveWorkspaceFile,
+  getWorkspaceFile,
+  createTelegramLinkCode,
+  getTelegramLinkByUser,
+  unlinkTelegram,
+} from "./db.js";
+import { initTelegramBot, sendTelegramMessage } from "./telegram.js";
 import {
   deployAgent,
   upgradeAgent,
@@ -21,6 +44,7 @@ import {
   getAppInfo,
   getAppLogs,
 } from "./eigencompute.js";
+import { encryptEnvVars, decryptEnvVars } from "./envVarsEncrypt.js";
 
 // Request validation schemas
 const envVarSchema = z.object({
@@ -49,6 +73,46 @@ const authVerifySchema = z.object({
   message: z.string().min(1),
   signature: z.string().min(1),
 });
+
+const sessionSaveSchema = z.object({
+  sessionId: z.string().min(1).max(128),
+  messages: z.array(z.record(z.unknown())),
+  signature: z.string().min(1),
+});
+
+const memorySaveSchema = z.object({
+  key: z.string().min(1).max(128),
+  content: z.string().min(1),
+  signature: z.string().min(1),
+});
+
+const learningCreateSchema = z.object({
+  entryId: z.string().min(1).max(64),
+  entryType: z.enum(["LRN", "ERR", "FEAT"]),
+  category: z.string().optional(),
+  summary: z.string().min(1),
+  content: z.string().min(1),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  area: z.string().optional(),
+  signature: z.string().min(1),
+});
+
+const learningUpdateSchema = z.object({
+  status: z.string().min(1),
+  promotedTo: z.string().optional(),
+});
+
+const workspaceFileSaveSchema = z.object({
+  content: z.string(),
+  signature: z.string().min(1),
+});
+
+// Grant env vars that must not be deleted by user (EigenAI auth)
+const GRANT_VAR_KEYS = [
+  "EIGENAI_GRANT_MESSAGE",
+  "EIGENAI_GRANT_SIGNATURE",
+  "EIGENAI_WALLET_ADDRESS",
+] as const;
 
 // Constants
 const JSON_BODY_LIMIT = "50kb";
@@ -158,10 +222,36 @@ function handleRouteError(
   res.status(500).json({ error: `${context} failed` });
 }
 
+const GRANT_API = process.env.EIGENAI_GRANT_API ?? "https://determinal-api.eigenarcade.com";
+
 // GET /api/auth/nonce — get a server-issued nonce for SIWE
 app.get("/api/auth/nonce", authLimiter, (_req, res) => {
   const nonce = generateNonce();
   res.json({ nonce });
+});
+
+// GET /api/auth/grant — proxy grant check to avoid CORS (browser → our backend → EigenArcade)
+app.get("/api/auth/grant", authLimiter, async (req, res) => {
+  const address = typeof req.query.address === "string" ? req.query.address.trim() : "";
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    res.status(400).json({ error: "Invalid or missing address" });
+    return;
+  }
+  try {
+    const grantRes = await fetch(`${GRANT_API}/checkGrant?address=${encodeURIComponent(address)}`);
+    if (!grantRes.ok) {
+      res.json({ hasGrant: false, tokenCount: 0 });
+      return;
+    }
+    const data = (await grantRes.json()) as { hasGrant?: boolean; tokenCount?: number };
+    res.json({
+      hasGrant: data.hasGrant ?? false,
+      tokenCount: data.tokenCount ?? 0,
+    });
+  } catch (err) {
+    console.error("Grant check proxy error:", err);
+    res.json({ hasGrant: false, tokenCount: 0 });
+  }
 });
 
 // POST /api/auth/verify — verify SIWE signature, return session token
@@ -191,6 +281,7 @@ app.post("/api/auth/verify", authLimiter, async (req, res) => {
 
 // POST /api/agents/deploy — deploy a new agent for the user
 app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
+  let agentId: number | undefined;
   try {
     const userAddress = getUserAddress(req);
     const parsed = deployRequestSchema.safeParse(req.body);
@@ -214,7 +305,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
     }
 
     // Create agent record
-    const agentId = createAgent(userAddress, name);
+    agentId = createAgent(userAddress, name);
 
     // Deploy to EigenCompute
     // The ecloud_name is the friendly name passed to --name; the hex app_id is canonical
@@ -245,6 +336,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       instance_ip: instanceIp,
       docker_digest: dockerDigest,
       status: "running",
+      env_vars: encryptEnvVars(JSON.stringify(envVars)),
     });
 
     res.json({
@@ -255,6 +347,9 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Deploy error:", error);
+    if (agentId) {
+      updateAgent(agentId, { status: "terminated" });
+    }
     res.status(500).json({ error: "Deployment failed" });
   }
 });
@@ -276,8 +371,48 @@ app.post("/api/agents/upgrade", requireAuth, async (req, res) => {
       return;
     }
 
+    if (agent.status === "deploying") {
+      res
+        .status(409)
+        .json({ error: "Agent is still deploying. Wait for it to finish, then try again." });
+      return;
+    }
+
+    // Validate: grant vars cannot be deleted
+    if (agent.env_vars) {
+      let stored: { key: string; value: string; isPublic: boolean }[];
+      try {
+        stored = JSON.parse(decryptEnvVars(agent.env_vars));
+      } catch {
+        stored = [];
+      }
+      const incomingKeys = new Set(envVars.map((v) => v.key));
+      for (const key of GRANT_VAR_KEYS) {
+        const hadKey = stored.some((v) => v.key === key);
+        const hasKey = incomingKeys.has(key);
+        if (hadKey && !hasKey) {
+          res.status(400).json({
+            error: `Cannot remove required grant variable: ${key}. It is required for EigenAI authorization.`,
+          });
+          return;
+        }
+        if (hadKey && hasKey) {
+          const entry = envVars.find((v) => v.key === key);
+          if (!entry?.value?.trim()) {
+            res.status(400).json({
+              error: `Grant variable ${key} must not be empty.`,
+            });
+            return;
+          }
+        }
+      }
+    }
+
     await upgradeAgent(agent.app_id, envVars);
-    updateAgent(agent.id, { status: "running" });
+    updateAgent(agent.id, {
+      status: "running",
+      env_vars: encryptEnvVars(JSON.stringify(envVars)),
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -396,6 +531,19 @@ app.get("/api/agents/info", requireAuth, async (req, res) => {
       }
     }
 
+    // Check if agent is actually reachable (healthy)
+    let healthy = false;
+    if (agent.status === "running" && agent.instance_ip) {
+      try {
+        const healthRes = await fetch(`http://${agent.instance_ip}:${AGENT_PORT}/health`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        healthy = healthRes.ok;
+      } catch {
+        // Agent not reachable yet — still starting up
+      }
+    }
+
     res.json({
       name: agent.name,
       status: agent.status,
@@ -405,10 +553,39 @@ app.get("/api/agents/info", requireAuth, async (req, res) => {
       instanceIp: agent.instance_ip,
       dockerDigest: agent.docker_digest,
       createdAt: agent.created_at,
+      healthy,
     });
   } catch (error) {
     console.error("Info error:", error);
     res.status(500).json({ error: "Failed to get agent info" });
+  }
+});
+
+// GET /api/agents/env — return agent env vars for Settings panel (authenticated)
+app.get("/api/agents/env", requireAuth, async (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const agent = getAgentByUser(userAddress);
+
+    if (!agent?.app_id) {
+      res.status(404).json({ error: "No active agent found" });
+      return;
+    }
+
+    if (!agent.env_vars) {
+      res.json({ envVars: [] });
+      return;
+    }
+
+    const envVars = JSON.parse(decryptEnvVars(agent.env_vars)) as {
+      key: string;
+      value: string;
+      isPublic: boolean;
+    }[];
+    res.json({ envVars });
+  } catch (error) {
+    console.error("Env fetch error:", error);
+    res.status(500).json({ error: "Failed to get agent env vars" });
   }
 });
 
@@ -493,6 +670,295 @@ app.get("/api/agents/logs", requireAuth, async (req, res) => {
   }
 });
 
+// ── Session persistence endpoints ──────────────────────────────────────────
+
+// POST /api/agents/sessions/save — upsert session messages (signed by agent)
+app.post("/api/agents/sessions/save", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const parsed = sessionSaveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
+
+    const { sessionId, messages, signature } = parsed.data;
+    saveSession(userAddress, sessionId, JSON.stringify(messages), signature);
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, "Session save");
+  }
+});
+
+// GET /api/agents/sessions/load?sessionId= — load session messages
+app.get("/api/agents/sessions/load", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const sessionId = req.query.sessionId as string;
+    if (!sessionId) {
+      res.status(400).json({ error: "Missing sessionId query parameter" });
+      return;
+    }
+
+    const session = loadSession(userAddress, sessionId);
+    if (!session) {
+      res.json({ messages: [], signature: null });
+      return;
+    }
+
+    res.json({
+      messages: JSON.parse(session.messages),
+      signature: session.signature,
+      updatedAt: session.updated_at,
+    });
+  } catch (error) {
+    handleRouteError(res, error, "Session load");
+  }
+});
+
+// GET /api/agents/sessions — list all sessions for this user
+app.get("/api/agents/sessions", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const sessions = listSessions(userAddress);
+    res.json({ sessions });
+  } catch (error) {
+    handleRouteError(res, error, "Session list");
+  }
+});
+
+// DELETE /api/agents/sessions?sessionId= — delete a session
+app.delete("/api/agents/sessions", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const sessionId = req.query.sessionId as string;
+    if (!sessionId) {
+      res.status(400).json({ error: "Missing sessionId query parameter" });
+      return;
+    }
+
+    const deleted = deleteSession(userAddress, sessionId);
+    res.json({ success: deleted });
+  } catch (error) {
+    handleRouteError(res, error, "Session delete");
+  }
+});
+
+// ── Memory persistence endpoints ───────────────────────────────────────────
+
+// POST /api/agents/memory — upsert a memory entry (signed by agent)
+app.post("/api/agents/memory", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const parsed = memorySaveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
+    const { key, content, signature } = parsed.data;
+    saveMemory(userAddress, key, content, signature);
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, "Memory save");
+  }
+});
+
+// GET /api/agents/memory — list all memory entries
+app.get("/api/agents/memory", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const q = req.query.q as string | undefined;
+    const entries = q ? searchMemory(userAddress, q) : listMemory(userAddress);
+    res.json({
+      entries: entries.map((e) => ({
+        key: e.key,
+        content: e.content,
+        updatedAt: e.updated_at,
+      })),
+    });
+  } catch (error) {
+    handleRouteError(res, error, "Memory list");
+  }
+});
+
+// DELETE /api/agents/memory?key= — delete a memory entry
+app.delete("/api/agents/memory", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const key = req.query.key as string;
+    if (!key) {
+      res.status(400).json({ error: "Missing key query parameter" });
+      return;
+    }
+    const deleted = deleteMemory(userAddress, key);
+    res.json({ success: deleted });
+  } catch (error) {
+    handleRouteError(res, error, "Memory delete");
+  }
+});
+
+// ── Learnings endpoints ────────────────────────────────────────────────────
+
+// POST /api/agents/learnings — create a learning entry
+app.post("/api/agents/learnings", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const parsed = learningCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
+    createLearning(userAddress, parsed.data);
+    res.json({ success: true, entryId: parsed.data.entryId });
+  } catch (error) {
+    handleRouteError(res, error, "Learning create");
+  }
+});
+
+// GET /api/agents/learnings — list learnings, filterable by ?status= and ?type=
+app.get("/api/agents/learnings", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const q = req.query.q as string | undefined;
+    if (q) {
+      const entries = searchLearnings(userAddress, q);
+      res.json({ entries });
+      return;
+    }
+    const entries = listLearnings(userAddress, {
+      status: req.query.status as string | undefined,
+      entryType: req.query.type as string | undefined,
+    });
+    res.json({ entries });
+  } catch (error) {
+    handleRouteError(res, error, "Learning list");
+  }
+});
+
+// PATCH /api/agents/learnings/:entryId — update status
+app.patch("/api/agents/learnings/:entryId", requireAuth, (req, res) => {
+  try {
+    const parsed = learningUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
+    const updated = updateLearningStatus(
+      String(req.params.entryId),
+      parsed.data.status,
+      parsed.data.promotedTo
+    );
+    res.json({ success: updated });
+  } catch (error) {
+    handleRouteError(res, error, "Learning update");
+  }
+});
+
+// ── Workspace files endpoints ──────────────────────────────────────────────
+
+// GET /api/agents/workspace/:filename — load a workspace file
+app.get("/api/agents/workspace/:filename", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const file = getWorkspaceFile(userAddress, String(req.params.filename));
+    if (!file) {
+      res.json({ content: null });
+      return;
+    }
+    res.json({ content: file.content, updatedAt: file.updated_at });
+  } catch (error) {
+    handleRouteError(res, error, "Workspace file load");
+  }
+});
+
+// PUT /api/agents/workspace/:filename — upsert a workspace file
+app.put("/api/agents/workspace/:filename", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const parsed = workspaceFileSaveSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
+      return;
+    }
+    saveWorkspaceFile(
+      userAddress,
+      String(req.params.filename),
+      parsed.data.content,
+      parsed.data.signature
+    );
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, "Workspace file save");
+  }
+});
+
+// ── Telegram linking endpoints ──────────────────────────────────────────────
+
+// POST /api/telegram/link — generate a link code for this user
+app.post("/api/telegram/link", requireAuth, (_req, res) => {
+  try {
+    const userAddress = getUserAddress(_req);
+    const code = Math.random().toString(36).slice(2, 10);
+    createTelegramLinkCode(userAddress, code);
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? "eigenskills_bot";
+    res.json({
+      code,
+      url: `https://t.me/${botUsername}?start=${code}`,
+    });
+  } catch (error) {
+    handleRouteError(res, error, "Telegram link");
+  }
+});
+
+// GET /api/telegram/status — check if Telegram is linked
+app.get("/api/telegram/status", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const link = getTelegramLinkByUser(userAddress);
+    res.json({
+      linked: !!link?.telegram_chat_id,
+      chatId: link?.telegram_chat_id ?? null,
+    });
+  } catch (error) {
+    handleRouteError(res, error, "Telegram status");
+  }
+});
+
+// DELETE /api/telegram/link — unlink Telegram
+app.delete("/api/telegram/link", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const unlinked = unlinkTelegram(userAddress);
+    res.json({ success: unlinked });
+  } catch (error) {
+    handleRouteError(res, error, "Telegram unlink");
+  }
+});
+
+// ── Heartbeat notification endpoint (agent → backend → Telegram) ───────────
+
+app.post("/api/heartbeat/notify", async (req, res) => {
+  try {
+    const { message, userAddress } = req.body;
+    if (!message) {
+      res.status(400).json({ error: "Missing message" });
+      return;
+    }
+
+    // If userAddress is specified, send to that user's linked Telegram
+    if (userAddress) {
+      const link = getTelegramLinkByUser(userAddress);
+      if (link?.telegram_chat_id) {
+        await sendTelegramMessage(link.telegram_chat_id, message);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, "Heartbeat notify");
+  }
+});
+
 // Health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -507,4 +973,9 @@ app.use(globalErrorHandler);
 
 app.listen(PORT, () => {
   console.log(`EigenSkills Backend running on port ${PORT}`);
+  try {
+    initTelegramBot();
+  } catch (err) {
+    console.error("Telegram bot failed to start (non-fatal):", err);
+  }
 });

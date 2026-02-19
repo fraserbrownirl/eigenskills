@@ -1,8 +1,32 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { deployAgent, type EnvVar } from "@/lib/api";
-import { checkEigenAIGrant, signEigenAIGrant, getConnectedAccount } from "@/lib/wallet";
+import { deployAgent, getGrantStatus, type EnvVar } from "@/lib/api";
+import { signEigenAIGrant, getConnectedAccount } from "@/lib/wallet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Check,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Trash2,
+  Shield,
+  AlertCircle,
+  Key,
+  User,
+  Server,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AgentSetupProps {
   token: string;
@@ -18,6 +42,7 @@ interface GrantCredentials {
 export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
+  const [persona, setPersona] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +62,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
     if (!address) return;
 
     setWalletAddress(address);
-    const status = await checkEigenAIGrant(address);
+    const status = await getGrantStatus(address);
     setGrantStatus({
       checked: true,
       hasGrant: status.hasGrant,
@@ -92,6 +117,10 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
       // Build env vars including grant credentials if signed
       const allVars: EnvVar[] = [...envVars.filter((v) => v.key && v.value)];
 
+      if (persona.trim()) {
+        allVars.push({ key: "AGENT_SOUL", value: persona.trim(), isPublic: false });
+      }
+
       if (grantCredentials) {
         allVars.push(
           {
@@ -123,356 +152,409 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
 
   const totalSteps = 4;
 
+  const steps = [
+    { id: 1, title: "Identity", icon: User },
+    { id: 2, title: "Authorization", icon: Shield },
+    { id: 3, title: "Configuration", icon: Key },
+    { id: 4, title: "Review", icon: Server },
+  ];
+
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <div className="mx-auto w-full max-w-3xl p-4">
       {/* Step indicator */}
-      <div className="mb-8 flex items-center justify-center gap-2">
-        {[1, 2, 3, 4].map((s) => (
-          <div key={s} className="flex items-center gap-2">
-            <div
-              className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors ${
-                s <= step ? "bg-white text-zinc-900" : "bg-zinc-800 text-zinc-500"
-              }`}
-            >
-              {s}
-            </div>
-            {s < totalSteps && (
-              <div
-                className={`h-px w-8 transition-colors ${s < step ? "bg-white" : "bg-zinc-800"}`}
-              />
-            )}
-          </div>
-        ))}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          {steps.map((s, i) => {
+            const Icon = s.icon;
+            const isActive = s.id === step;
+            const isCompleted = s.id < step;
+
+            return (
+              <div key={s.id} className="flex flex-col items-center relative z-10">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-300 bg-background",
+                    isActive
+                      ? "border-primary text-primary shadow-[0_0_15px_rgba(99,102,241,0.5)]"
+                      : isCompleted
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-muted text-muted-foreground"
+                  )}
+                >
+                  {isCompleted ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                </div>
+                <span
+                  className={cn(
+                    "mt-2 text-xs font-medium transition-colors duration-300",
+                    isActive
+                      ? "text-primary"
+                      : isCompleted
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                  )}
+                >
+                  {s.title}
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Progress bar background */}
+          <div
+            className="absolute top-9 left-0 w-full h-0.5 bg-muted -z-0 hidden md:block"
+            style={{ width: "calc(100% - 4rem)", left: "2rem" }}
+          />
+
+          {/* Active progress bar */}
+          <div
+            className="absolute top-9 left-0 h-0.5 bg-primary transition-all duration-500 -z-0 hidden md:block"
+            style={{
+              width: `calc(${((step - 1) / (totalSteps - 1)) * 100}% - 4rem)`,
+              left: "2rem",
+            }}
+          />
+        </div>
       </div>
 
-      {/* Step 1: Name */}
-      {step === 1 && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Name your agent</h2>
-            <p className="mt-2 text-zinc-400">
-              Give your agent a display name. This is just for your reference.
-            </p>
-          </div>
-          <label htmlFor="agent-name" className="sr-only">
-            Agent name
-          </label>
-          <input
-            id="agent-name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="My Verifiable Agent"
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-3 text-white placeholder-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-          />
-          <button
-            onClick={() => setStep(2)}
-            disabled={!name.trim()}
-            className="w-full rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
-          >
-            Continue
-          </button>
-        </div>
-      )}
-
-      {/* Step 2: Authorize EigenAI */}
-      {step === 2 && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Authorize EigenAI</h2>
-            <p className="mt-2 text-zinc-400">
-              Sign a message to let your agent use your EigenAI grant. This avoids needing a
-              separate grant for each agent.
-            </p>
-          </div>
-
-          {/* Grant status */}
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
-            {!grantStatus.checked ? (
-              <div className="flex items-center gap-3 text-zinc-400">
-                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-600 border-t-zinc-300" />
-                Checking grant status...
-              </div>
-            ) : grantStatus.hasGrant ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded-full bg-emerald-400" />
-                  <span className="text-emerald-400 font-medium">Grant active</span>
-                </div>
-                <p className="text-sm text-zinc-400">
-                  Your wallet has {grantStatus.tokenCount.toLocaleString()} tokens available.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 rounded-full bg-amber-400" />
-                  <span className="text-amber-400 font-medium">No grant found</span>
-                </div>
-                <p className="text-sm text-zinc-400">
-                  Your wallet doesn&apos;t have an EigenAI grant.{" "}
-                  <a
-                    href="https://eigenarcade.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-white underline hover:text-zinc-300"
-                  >
-                    Get one at EigenArcade
-                  </a>
-                  , then return here.
-                </p>
-              </>
-            )}
-          </div>
-
-          {/* Grant signature status */}
-          {grantStatus.hasGrant && (
-            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-              {grantCredentials ? (
-                <div className="flex items-center gap-3">
-                  <svg
-                    className="h-5 w-5 text-emerald-400"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
-                  >
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                  <span className="text-emerald-400 font-medium">Grant authorized</span>
-                </div>
-              ) : (
-                <>
-                  <p className="text-sm text-zinc-400 mb-4">
-                    Sign a message to authorize your agent to use your grant. This signature is
-                    encrypted and only accessible inside the TEE.
-                  </p>
-                  <button
-                    onClick={handleSignGrant}
-                    disabled={signingGrant}
-                    className="w-full rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
-                  >
-                    {signingGrant ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900" />
-                        Waiting for signature...
-                      </span>
-                    ) : (
-                      "Sign Authorization"
-                    )}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
-              {error}
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep(1)}
-              className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 transition-colors hover:bg-zinc-900"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => {
-                setError(null);
-                setStep(3);
-              }}
-              disabled={grantStatus.hasGrant && !grantCredentials}
-              className="flex-1 rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
-            >
-              {grantStatus.hasGrant && !grantCredentials ? "Sign to continue" : "Continue"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 3: Env vars */}
-      {step === 3 && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Configure environment variables</h2>
-            <p className="mt-2 text-zinc-400">
-              Add your API keys and configuration. Encrypted variables are only accessible inside
-              your agent&apos;s TEE. Public variables appear on the Verifiability Dashboard.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            {envVars.map((envVar, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3"
-              >
-                <div className="flex-1 space-y-2">
-                  <label htmlFor={`env-key-${i}`} className="sr-only">
-                    Environment variable key
-                  </label>
-                  <input
-                    id={`env-key-${i}`}
-                    type="text"
-                    value={envVar.key}
-                    onChange={(e) => updateEnvVar(i, "key", e.target.value)}
-                    placeholder="KEY_NAME"
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-white placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
-                  />
-                  <label htmlFor={`env-value-${i}`} className="sr-only">
-                    Environment variable value
-                  </label>
-                  <input
-                    id={`env-value-${i}`}
-                    type="password"
-                    value={envVar.value}
-                    onChange={(e) => updateEnvVar(i, "value", e.target.value)}
-                    placeholder="Value"
-                    className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm text-white placeholder-zinc-600 focus:border-zinc-500 focus:outline-none"
-                  />
-                  <label className="flex items-center gap-2 text-sm text-zinc-400">
-                    <input
-                      type="checkbox"
-                      checked={envVar.isPublic}
-                      onChange={(e) => updateEnvVar(i, "isPublic", e.target.checked)}
-                      className="rounded border-zinc-600"
-                    />
-                    Make public (visible on Verifiability Dashboard)
-                  </label>
-                </div>
-                <button
-                  onClick={() => removeEnvVar(i)}
-                  className="mt-1 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300"
-                  aria-label="Remove environment variable"
+      <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl">
+        {/* Step 1: Name + Persona */}
+        {step === 1 && (
+          <>
+            <CardHeader>
+              <CardTitle>Name your agent</CardTitle>
+              <CardDescription>
+                Give your agent a display name and optionally define its personality.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <label
+                  htmlFor="agent-name"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    aria-hidden="true"
-                  >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
-                </button>
+                  Agent Name
+                </label>
+                <Input
+                  id="agent-name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="My Verifiable Agent"
+                  className="bg-zinc-900/50"
+                />
               </div>
-            ))}
-          </div>
+              <div className="space-y-2">
+                <label
+                  htmlFor="agent-persona"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Persona (optional)
+                </label>
+                <textarea
+                  id="agent-persona"
+                  value={persona}
+                  onChange={(e) => setPersona(e.target.value)}
+                  placeholder="Be concise and direct. Have opinions. When you discover something non-obvious, log it as a learning."
+                  rows={4}
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-zinc-900/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Defines how your agent communicates and behaves. Blank uses the default.
+                </p>
+              </div>
+            </CardContent>
+            <CardFooter>
+              <Button onClick={() => setStep(2)} disabled={!name.trim()} className="w-full">
+                Continue <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </>
+        )}
 
-          <button
-            onClick={addEnvVar}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-700 py-3 text-sm text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-300"
-          >
-            <svg
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              aria-hidden="true"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            Add variable
-          </button>
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep(2)}
-              className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 transition-colors hover:bg-zinc-900"
-            >
-              Back
-            </button>
-            <button
-              onClick={() => setStep(4)}
-              className="flex-1 rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200"
-            >
-              Review
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Step 4: Review and deploy */}
-      {step === 4 && (
-        <div className="space-y-6">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Review and deploy</h2>
-            <p className="mt-2 text-zinc-400">
-              Confirm your agent configuration before deploying to EigenCompute.
-            </p>
-          </div>
-
-          <div className="space-y-4 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-            <div>
-              <span className="text-sm text-zinc-500">Agent name</span>
-              <p className="font-semibold text-white">{name}</p>
-            </div>
-            <div>
-              <span className="text-sm text-zinc-500">EigenAI Authorization</span>
-              <p className="text-white">
-                {grantCredentials ? (
-                  <span className="text-emerald-400">Using your wallet grant</span>
+        {/* Step 2: Authorize EigenAI */}
+        {step === 2 && (
+          <>
+            <CardHeader>
+              <CardTitle>Authorize EigenAI</CardTitle>
+              <CardDescription>
+                Sign a message to let your agent use your EigenAI grant.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Grant status */}
+              <div className="rounded-lg border bg-card/50 p-4 space-y-4">
+                {!grantStatus.checked ? (
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Checking grant status...
+                  </div>
+                ) : grantStatus.hasGrant ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="success"
+                        className="bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/25 border-none"
+                      >
+                        Grant Active
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {grantStatus.tokenCount.toLocaleString()} tokens available
+                      </span>
+                    </div>
+                  </>
                 ) : (
-                  <span className="text-amber-400">Will need separate grant activation</span>
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="warning"
+                        className="bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 border-none"
+                      >
+                        No Grant Found
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Your wallet doesn&apos;t have an EigenAI grant.{" "}
+                      <a
+                        href="https://determinal.eigenarcade.com/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary underline hover:text-primary/80"
+                      >
+                        Get one at EigenArcade
+                      </a>
+                      , then return here.
+                    </p>
+                  </>
                 )}
-              </p>
-            </div>
-            <div>
-              <span className="text-sm text-zinc-500">Environment variables</span>
-              <p className="text-white">
-                {envVars.filter((v) => v.key).length} custom (
-                {envVars.filter((v) => v.isPublic).length} public,{" "}
-                {envVars.filter((v) => !v.isPublic && v.key).length} encrypted)
-                {grantCredentials && " + 3 grant credentials"}
-              </p>
-            </div>
-            <div>
-              <span className="text-sm text-zinc-500">Runtime</span>
-              <p className="text-white">EigenCompute TEE (Intel TDX)</p>
-            </div>
-            <div>
-              <span className="text-sm text-zinc-500">Instance type</span>
-              <p className="text-white">g1-standard-4t</p>
-            </div>
-          </div>
+              </div>
 
-          {error && (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
-              {error}
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep(3)}
-              disabled={deploying}
-              className="flex-1 rounded-xl border border-zinc-700 py-3 font-semibold text-zinc-300 transition-colors hover:bg-zinc-900 disabled:opacity-50"
-            >
-              Back
-            </button>
-            <button
-              onClick={handleDeploy}
-              disabled={deploying}
-              className="flex-1 rounded-xl bg-white py-3 font-semibold text-zinc-900 transition-colors hover:bg-zinc-200 disabled:opacity-50"
-            >
-              {deploying ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-zinc-400 border-t-zinc-900" />
-                  Deploying...
-                </span>
-              ) : (
-                "Deploy Agent"
+              {/* Grant signature status */}
+              {grantStatus.hasGrant && (
+                <div className="rounded-lg border bg-card/50 p-4">
+                  {grantCredentials ? (
+                    <div className="flex items-center gap-3 text-emerald-500">
+                      <Check className="h-5 w-5" />
+                      <span className="font-medium">Grant authorized</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        Sign a message to authorize your agent to use your grant. This signature is
+                        encrypted and only accessible inside the TEE.
+                      </p>
+                      <Button
+                        onClick={handleSignGrant}
+                        disabled={signingGrant}
+                        variant="outline"
+                        className="w-full"
+                      >
+                        {signingGrant ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Waiting for signature...
+                          </>
+                        ) : (
+                          "Sign Authorization"
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
-            </button>
-          </div>
-        </div>
-      )}
+
+              {error && (
+                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  {error}
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep(1)} className="flex-1">
+                Back
+              </Button>
+              <Button
+                onClick={() => {
+                  setError(null);
+                  setStep(3);
+                }}
+                disabled={grantStatus.hasGrant && !grantCredentials}
+                className="flex-1"
+              >
+                {grantStatus.hasGrant && !grantCredentials ? "Sign to continue" : "Continue"}
+              </Button>
+            </CardFooter>
+          </>
+        )}
+
+        {/* Step 3: Env vars */}
+        {step === 3 && (
+          <>
+            <CardHeader>
+              <CardTitle>Configure Environment</CardTitle>
+              <CardDescription>
+                Add your API keys and configuration. Encrypted variables are only accessible inside
+                your agent&apos;s TEE.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                {envVars.map((envVar, i) => (
+                  <div
+                    key={i}
+                    className="flex flex-col gap-3 rounded-lg border bg-card/50 p-3 sm:flex-row sm:items-start"
+                  >
+                    <div className="flex-1 space-y-2">
+                      <Input
+                        type="text"
+                        value={envVar.key}
+                        onChange={(e) => updateEnvVar(i, "key", e.target.value)}
+                        placeholder="KEY_NAME"
+                        className="font-mono text-sm"
+                      />
+                      <Input
+                        type="password"
+                        value={envVar.value}
+                        onChange={(e) => updateEnvVar(i, "value", e.target.value)}
+                        placeholder="Value"
+                        className="font-mono text-sm"
+                      />
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={envVar.isPublic}
+                          onChange={(e) => updateEnvVar(i, "isPublic", e.target.checked)}
+                          className="rounded border-input bg-background text-primary focus:ring-primary"
+                        />
+                        Make public (visible on Verifiability Dashboard)
+                      </label>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeEnvVar(i)}
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <Button variant="outline" onClick={addEnvVar} className="w-full border-dashed">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Variable
+              </Button>
+            </CardContent>
+            <CardFooter className="flex gap-3">
+              <Button variant="outline" onClick={() => setStep(2)} className="flex-1">
+                Back
+              </Button>
+              <Button onClick={() => setStep(4)} className="flex-1">
+                Review <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            </CardFooter>
+          </>
+        )}
+
+        {/* Step 4: Review and deploy */}
+        {step === 4 && (
+          <>
+            <CardHeader>
+              <CardTitle>Review & Deploy</CardTitle>
+              <CardDescription>
+                Confirm your agent configuration before deploying to EigenCompute.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4 rounded-lg border bg-card/50 p-6">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <span className="text-sm text-muted-foreground">Agent name</span>
+                    <p className="font-semibold text-foreground">{name}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-muted-foreground">Runtime</span>
+                    <p className="text-foreground">EigenCompute TEE (Intel TDX)</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-muted-foreground">Instance type</span>
+                    <p className="text-foreground">g1-standard-4t</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-muted-foreground">Environment variables</span>
+                    <p className="text-foreground">
+                      {envVars.filter((v) => v.key).length} custom (
+                      {envVars.filter((v) => v.isPublic).length} public,{" "}
+                      {envVars.filter((v) => !v.isPublic && v.key).length} encrypted)
+                      {grantCredentials && " + 3 grant credentials"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <span className="text-sm text-muted-foreground">Persona</span>
+                  <p className="mt-1 text-sm text-foreground/90 italic">
+                    {persona.trim() ? (
+                      `"${persona.trim().slice(0, 120)}${persona.length > 120 ? "..." : ""}"`
+                    ) : (
+                      <span className="text-muted-foreground not-italic">Default Persona</span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <span className="text-sm text-muted-foreground">Authorization</span>
+                  <div className="mt-1">
+                    {grantCredentials ? (
+                      <Badge
+                        variant="success"
+                        className="bg-emerald-500/15 text-emerald-500 border-none"
+                      >
+                        Using Wallet Grant
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="warning"
+                        className="bg-amber-500/15 text-amber-500 border-none"
+                      >
+                        Separate Grant Required
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded-md bg-destructive/15 p-3 text-sm text-destructive flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4" />
+                  {error}
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setStep(3)}
+                disabled={deploying}
+                className="flex-1"
+              >
+                Back
+              </Button>
+              <Button onClick={handleDeploy} disabled={deploying} className="flex-1">
+                {deploying ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deploying...
+                  </>
+                ) : (
+                  "Deploy Agent"
+                )}
+              </Button>
+            </CardFooter>
+          </>
+        )}
+      </Card>
     </div>
   );
 }

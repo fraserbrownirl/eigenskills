@@ -15,6 +15,7 @@ export interface AgentInfo {
   instanceIp: string | null;
   dockerDigest: string | null;
   createdAt: string;
+  healthy: boolean;
 }
 
 export interface TaskResult {
@@ -23,6 +24,7 @@ export interface TaskResult {
   routingSignature: string;
   agentSignature: string;
   agentAddress: string;
+  sessionId?: string;
 }
 
 function getHeaders(token: string): HeadersInit {
@@ -56,6 +58,22 @@ export async function verifyAuth(
   return res.json();
 }
 
+/**
+ * Check if a wallet has an active EigenAI grant (via backend proxy to avoid CORS).
+ */
+export async function getGrantStatus(address: string): Promise<{
+  hasGrant: boolean;
+  tokenCount: number;
+}> {
+  const res = await fetch(`${BACKEND_URL}/api/auth/grant?address=${encodeURIComponent(address)}`);
+  if (!res.ok) return { hasGrant: false, tokenCount: 0 };
+  const data = await res.json();
+  return {
+    hasGrant: data.hasGrant ?? false,
+    tokenCount: data.tokenCount ?? 0,
+  };
+}
+
 export async function deployAgent(
   token: string,
   name: string,
@@ -79,7 +97,20 @@ export async function upgradeAgent(token: string, envVars: EnvVar[]): Promise<vo
     headers: getHeaders(token),
     body: JSON.stringify({ envVars }),
   });
-  if (!res.ok) throw new Error("Upgrade failed");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Upgrade failed");
+  }
+}
+
+export async function getAgentEnvVars(token: string): Promise<EnvVar[]> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/env`, {
+    headers: getHeaders(token),
+  });
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to get agent env vars");
+  const data = await res.json();
+  return data.envVars ?? [];
 }
 
 export async function stopAgent(token: string): Promise<void> {
@@ -115,11 +146,15 @@ export async function getAgentInfo(token: string): Promise<AgentInfo | null> {
   return res.json();
 }
 
-export async function submitTask(token: string, task: string): Promise<TaskResult> {
+export async function submitTask(
+  token: string,
+  task: string,
+  sessionId?: string
+): Promise<TaskResult> {
   const res = await fetch(`${BACKEND_URL}/api/agents/task`, {
     method: "POST",
     headers: getHeaders(token),
-    body: JSON.stringify({ task }),
+    body: JSON.stringify({ task, sessionId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
