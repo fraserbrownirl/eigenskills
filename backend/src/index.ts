@@ -50,7 +50,6 @@ import {
   getAppInfo,
   getAppLogs,
   isAsyncDeployResult,
-  type AsyncDeployResult,
 } from "./eigencompute.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { encryptEnvVars, decryptEnvVars } from "./envVarsEncrypt.js";
@@ -477,85 +476,97 @@ app.get("/api/agents/deploy-status", requireAuth, (req, res) => {
 const DEPLOY_WEBHOOK_SECRET = process.env.DEPLOY_WEBHOOK_SECRET ?? "";
 
 // POST /api/webhook/deploy-result — callback from GitHub Actions
-app.post("/api/webhook/deploy-result", express.json(), async (req, res) => {
-  try {
-    // Verify webhook signature
-    const signature = req.headers["x-webhook-signature"];
-    const timestamp = req.headers["x-webhook-timestamp"];
+// Use raw body for HMAC verification
+app.post(
+  "/api/webhook/deploy-result",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    try {
+      // Verify webhook signature
+      const signature = req.headers["x-webhook-signature"];
+      const timestamp = req.headers["x-webhook-timestamp"];
 
-    if (!signature || typeof signature !== "string" || !DEPLOY_WEBHOOK_SECRET) {
-      console.warn("Webhook missing signature or secret not configured");
-      res.status(401).json({ error: "Unauthorized" });
-      return;
+      if (!signature || typeof signature !== "string" || !DEPLOY_WEBHOOK_SECRET) {
+        console.warn("Webhook missing signature or secret not configured");
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+
+      // Use raw body for HMAC verification
+      const rawBody = req.body.toString("utf8");
+      const expectedSig = createHmac("sha256", DEPLOY_WEBHOOK_SECRET).update(rawBody).digest("hex");
+
+      const sigBuffer = Buffer.from(signature.replace("sha256=", ""), "hex");
+      const expectedBuffer = Buffer.from(expectedSig, "hex");
+
+      if (
+        sigBuffer.length !== expectedBuffer.length ||
+        !timingSafeEqual(sigBuffer, expectedBuffer)
+      ) {
+        console.warn("Webhook signature mismatch");
+        console.warn("Expected:", expectedSig);
+        console.warn("Received:", signature.replace("sha256=", ""));
+        res.status(401).json({ error: "Invalid signature" });
+        return;
+      }
+
+      // Check timestamp (5 minute window)
+      const ts = parseInt(timestamp as string, 10);
+      if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+        console.warn("Webhook timestamp out of range");
+        res.status(401).json({ error: "Timestamp expired" });
+        return;
+      }
+
+      // Parse JSON from raw body
+      const body = JSON.parse(rawBody);
+      const {
+        dispatch_id,
+        status,
+        error,
+        app_id,
+        wallet_address_eth,
+        wallet_address_sol,
+        instance_ip,
+        docker_digest,
+      } = body;
+
+      console.log(`Received deploy webhook: dispatch_id=${dispatch_id}, status=${status}`);
+
+      // Get pending deploy record
+      const pendingDeploy = getPendingDeploy(dispatch_id);
+      if (!pendingDeploy) {
+        console.warn(`Unknown dispatch_id: ${dispatch_id}`);
+        res.status(404).json({ error: "Unknown dispatch_id" });
+        return;
+      }
+
+      // Update pending deploy status
+      completePendingDeploy(dispatch_id, status === "success" ? "success" : "error", error || null);
+
+      // Update agent record if deploy succeeded
+      if (status === "success" && pendingDeploy.agent_id) {
+        updateAgent(pendingDeploy.agent_id, {
+          app_id: app_id || undefined,
+          wallet_address_eth: wallet_address_eth || undefined,
+          wallet_address_sol: wallet_address_sol || undefined,
+          instance_ip: instance_ip || undefined,
+          docker_digest: docker_digest || undefined,
+          status: "running",
+        });
+        console.log(`Agent ${pendingDeploy.agent_id} deployed successfully: app_id=${app_id}`);
+      } else if (status !== "success" && pendingDeploy.agent_id) {
+        updateAgent(pendingDeploy.agent_id, { status: "terminated" });
+        console.log(`Agent ${pendingDeploy.agent_id} deploy failed: ${error}`);
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error("Webhook processing error:", err);
+      res.status(500).json({ error: "Webhook processing failed" });
     }
-
-    // Reconstruct payload and verify HMAC
-    const payload = JSON.stringify(req.body);
-    const expectedSig = createHmac("sha256", DEPLOY_WEBHOOK_SECRET).update(payload).digest("hex");
-
-    const sigBuffer = Buffer.from(signature.replace("sha256=", ""), "hex");
-    const expectedBuffer = Buffer.from(expectedSig, "hex");
-
-    if (sigBuffer.length !== expectedBuffer.length || !timingSafeEqual(sigBuffer, expectedBuffer)) {
-      console.warn("Webhook signature mismatch");
-      res.status(401).json({ error: "Invalid signature" });
-      return;
-    }
-
-    // Check timestamp (5 minute window)
-    const ts = parseInt(timestamp as string, 10);
-    if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
-      console.warn("Webhook timestamp out of range");
-      res.status(401).json({ error: "Timestamp expired" });
-      return;
-    }
-
-    const {
-      dispatch_id,
-      status,
-      error,
-      app_id,
-      wallet_address_eth,
-      wallet_address_sol,
-      instance_ip,
-      docker_digest,
-    } = req.body;
-
-    console.log(`Received deploy webhook: dispatch_id=${dispatch_id}, status=${status}`);
-
-    // Get pending deploy record
-    const pendingDeploy = getPendingDeploy(dispatch_id);
-    if (!pendingDeploy) {
-      console.warn(`Unknown dispatch_id: ${dispatch_id}`);
-      res.status(404).json({ error: "Unknown dispatch_id" });
-      return;
-    }
-
-    // Update pending deploy status
-    completePendingDeploy(dispatch_id, status === "success" ? "success" : "error", error || null);
-
-    // Update agent record if deploy succeeded
-    if (status === "success" && pendingDeploy.agent_id) {
-      updateAgent(pendingDeploy.agent_id, {
-        app_id: app_id || undefined,
-        wallet_address_eth: wallet_address_eth || undefined,
-        wallet_address_sol: wallet_address_sol || undefined,
-        instance_ip: instance_ip || undefined,
-        docker_digest: docker_digest || undefined,
-        status: "running",
-      });
-      console.log(`Agent ${pendingDeploy.agent_id} deployed successfully: app_id=${app_id}`);
-    } else if (status !== "success" && pendingDeploy.agent_id) {
-      updateAgent(pendingDeploy.agent_id, { status: "terminated" });
-      console.log(`Agent ${pendingDeploy.agent_id} deploy failed: ${error}`);
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Webhook processing error:", err);
-    res.status(500).json({ error: "Webhook processing failed" });
   }
-});
+);
 
 // POST /api/agents/upgrade — update agent env vars
 app.post("/api/agents/upgrade", requireAuth, async (req, res) => {

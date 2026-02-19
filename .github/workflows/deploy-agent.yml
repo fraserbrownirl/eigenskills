@@ -21,6 +21,12 @@ jobs:
       - name: Install ecloud CLI
         run: npm install -g @layr-labs/ecloud-cli
 
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Write env file
         run: |
           echo '${{ github.event.client_payload.env_vars }}' | base64 -d > /tmp/agent.env
@@ -94,37 +100,31 @@ jobs:
         if: always()
         env:
           WEBHOOK_SECRET: ${{ secrets.DEPLOY_WEBHOOK_SECRET }}
+          DISPATCH_ID: ${{ github.event.client_payload.dispatch_id }}
+          CALLBACK_URL: ${{ github.event.client_payload.callback_url }}
+          DEPLOY_ERROR: ${{ steps.deploy.outputs.error }}
+          ERROR_MSG: ${{ steps.deploy.outputs.error_message }}
+          APP_ID: ${{ steps.deploy.outputs.app_id }}
+          WALLET_ETH: ${{ steps.deploy.outputs.wallet_eth }}
+          WALLET_SOL: ${{ steps.deploy.outputs.wallet_sol }}
+          INSTANCE_IP: ${{ steps.deploy.outputs.instance_ip }}
+          DOCKER_DIGEST: ${{ steps.deploy.outputs.docker_digest }}
         run: |
-          DISPATCH_ID="${{ github.event.client_payload.dispatch_id }}"
-          CALLBACK_URL="${{ github.event.client_payload.callback_url }}"
-          
-          if [ "${{ steps.deploy.outputs.error }}" = "true" ]; then
+          if [ "$DEPLOY_ERROR" = "true" ]; then
             STATUS="error"
-            ERROR_MSG="${{ steps.deploy.outputs.error_message }}"
           else
             STATUS="success"
             ERROR_MSG=""
           fi
           
-          # Create HMAC signature for webhook verification
           TIMESTAMP=$(date +%s)
-          PAYLOAD=$(cat <<EOF
-          {
-            "dispatch_id": "$DISPATCH_ID",
-            "status": "$STATUS",
-            "error": "$ERROR_MSG",
-            "app_id": "${{ steps.deploy.outputs.app_id }}",
-            "wallet_address_eth": "${{ steps.deploy.outputs.wallet_eth }}",
-            "wallet_address_sol": "${{ steps.deploy.outputs.wallet_sol }}",
-            "instance_ip": "${{ steps.deploy.outputs.instance_ip }}",
-            "docker_digest": "${{ steps.deploy.outputs.docker_digest }}",
-            "timestamp": $TIMESTAMP
-          }
-          EOF
-          )
+          
+          # Build JSON payload (compact, no extra whitespace)
+          PAYLOAD="{\"dispatch_id\":\"$DISPATCH_ID\",\"status\":\"$STATUS\",\"error\":\"$ERROR_MSG\",\"app_id\":\"$APP_ID\",\"wallet_address_eth\":\"$WALLET_ETH\",\"wallet_address_sol\":\"$WALLET_SOL\",\"instance_ip\":\"$INSTANCE_IP\",\"docker_digest\":\"$DOCKER_DIGEST\",\"timestamp\":$TIMESTAMP}"
           
           SIGNATURE=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')
           
+          echo "Sending callback to $CALLBACK_URL"
           curl -X POST "$CALLBACK_URL" \
             -H "Content-Type: application/json" \
             -H "X-Webhook-Signature: sha256=$SIGNATURE" \
@@ -132,4 +132,5 @@ jobs:
             -d "$PAYLOAD" \
             --max-time 30 \
             --retry 3 \
-            --retry-delay 5
+            --retry-delay 5 \
+            -v
