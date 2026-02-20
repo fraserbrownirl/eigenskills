@@ -46,6 +46,18 @@ import {
   SI_TOOLS,
   executeSITool,
 } from "./learnings.js";
+
+/**
+ * Strip raw model tokens (ChatML, special markers) from AI responses.
+ * These tokens sometimes leak from the underlying LLM and shouldn't be shown to users.
+ */
+function sanitizeResponse(text: string): string {
+  return text
+    .replace(/<\|[^|>]+\|>/g, "") // Strip <|token|> markers (ChatML, etc.)
+    .replace(/<\|[^>]+>/g, "") // Strip <|token> markers
+    .replace(/\n{3,}/g, "\n\n") // Collapse excessive newlines left by stripping
+    .trim();
+}
 import { MEMORY_TOOLS, executeMemoryTool } from "./memory.js";
 import { registerDefaultHeartbeats, startHeartbeats } from "./heartbeat.js";
 
@@ -121,7 +133,7 @@ app.post("/task", async (req, res) => {
       });
 
       // Execute selected skills (if any)
-      let finalResponse = loopResult.response;
+      let finalResponse = sanitizeResponse(loopResult.response);
       if (loopResult.skillIds.length > 0) {
         const skillOutputs: string[] = [];
         for (const skillId of loopResult.skillIds) {
@@ -143,7 +155,7 @@ app.post("/task", async (req, res) => {
             }
           }
 
-          skillOutputs.push(result.output);
+          skillOutputs.push(sanitizeResponse(result.output));
           await addLogEntry("skill_completed", {
             skillId,
             output: result.output.slice(0, 500),

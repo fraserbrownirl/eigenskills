@@ -6,6 +6,18 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 let bot: TelegramBot | null = null;
 
 /**
+ * Strip raw model tokens (ChatML, special markers) from AI responses.
+ * These tokens sometimes leak from the underlying LLM and shouldn't be shown to users.
+ */
+function sanitizeAgentResponse(text: string): string {
+  return text
+    .replace(/<\|[^|>]+\|>/g, "") // Strip <|token|> markers (ChatML, etc.)
+    .replace(/<\|[^>]+>/g, "") // Strip <|token> markers
+    .replace(/\n{3,}/g, "\n\n") // Collapse excessive newlines left by stripping
+    .trim();
+}
+
+/**
  * Initialize the Telegram bot if TELEGRAM_BOT_TOKEN is set.
  * Called once during backend startup. No-ops if token is absent.
  */
@@ -13,6 +25,14 @@ export function initTelegramBot(): void {
   if (!BOT_TOKEN) {
     console.log("TELEGRAM_BOT_TOKEN not set — Telegram bot disabled");
     return;
+  }
+
+  // Stop any existing bot instance before creating a new one
+  // This prevents duplicate handlers when the server restarts
+  if (bot) {
+    console.log("Stopping existing Telegram bot instance...");
+    bot.stopPolling();
+    bot = null;
   }
 
   bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -80,7 +100,7 @@ export function initTelegramBot(): void {
       }
 
       const data = (await res.json()) as { result: string; skillsUsed?: string[] };
-      let reply = data.result;
+      let reply = sanitizeAgentResponse(data.result);
 
       if (data.skillsUsed && data.skillsUsed.length > 0) {
         reply += `\n\n_Skills: ${data.skillsUsed.join(", ")}_`;
@@ -113,4 +133,16 @@ export async function sendTelegramMessage(chatId: string, text: string): Promise
 
 export function getTelegramBot(): TelegramBot | null {
   return bot;
+}
+
+/**
+ * Stop the Telegram bot polling. Call on process shutdown to prevent
+ * duplicate bot instances when the server restarts.
+ */
+export function stopTelegramBot(): void {
+  if (bot) {
+    console.log("Stopping Telegram bot polling...");
+    bot.stopPolling();
+    bot = null;
+  }
 }

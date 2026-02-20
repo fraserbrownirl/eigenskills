@@ -40,7 +40,7 @@ import {
   type MemoryRow,
   type PendingDeployRow,
 } from "./db.js";
-import { initTelegramBot, sendTelegramMessage } from "./telegram.js";
+import { initTelegramBot, sendTelegramMessage, stopTelegramBot } from "./telegram.js";
 import {
   deployAgent,
   upgradeAgent,
@@ -1433,7 +1433,7 @@ const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 app.use(globalErrorHandler);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`EigenSkills Backend running on port ${PORT}`);
   try {
     initTelegramBot();
@@ -1441,3 +1441,18 @@ app.listen(PORT, () => {
     console.error("Telegram bot failed to start (non-fatal):", err);
   }
 });
+
+// Graceful shutdown handling - stop Telegram bot to prevent duplicate instances
+function gracefulShutdown(signal: string) {
+  console.log(`${signal} received, shutting down gracefully...`);
+  stopTelegramBot();
+  server.close(() => {
+    console.log("HTTP server closed");
+    process.exit(0);
+  });
+  // Force exit after 10s if graceful shutdown hangs
+  setTimeout(() => process.exit(1), 10_000);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

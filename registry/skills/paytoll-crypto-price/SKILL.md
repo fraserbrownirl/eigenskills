@@ -1,0 +1,33 @@
+---
+name: paytoll-crypto-price
+description: >
+  Get real-time crypto prices for any CoinGecko-listed coin. Returns price in
+  USD/EUR/GBP/JPY with optional 24h volume and market cap data. Costs $0.015.
+version: 1.0.0
+author: eigenskills
+requires_env: []
+execution:
+  - run: node run.js {{input}}
+---
+
+# Crypto Price
+
+Get real-time cryptocurrency prices via PayToll API.
+
+## Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| symbol | string | Yes | Crypto ticker (e.g., BTC, ETH) or CoinGecko ID |
+| currency | string | No | Fiat currency: usd, eur, gbp, jpy (default: usd) |
+| includeMarketData | boolean | No | Include 24h volume, market cap (default: false) |
+
+## Example Input
+
+```json
+{
+  "symbol": "ETH",
+  "currency": "usd",
+  "includeMarketData": true
+}
+```

@@ -10,56 +10,281 @@
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-cancel-task",
-      "description": "Cancel a PayToll task and initiate refund flow. Can cancel tasks that are pending, funded, or in progress. Refund amount depends on task state and work completed.",
+      "id": "paytoll-aave-best-borrow",
+      "description": "Find the lowest Aave V3 borrow APR across all chains for a given asset. Costs $0.01 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:f648b004ebcadb5144bbed4ca3e6e2d322691d06569d0e26aecbda701d3e1389",
+      "contentHash": "sha256:05fa4bf07d6c8d4912e1003b94725aa07b50126f505daf2956c5803419ba257a",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-create-task",
-      "description": "Create a paid task on PayToll and assign it to a specific agent. Use after discovering agents via search. Requires funding via fund-escrow before work begins.",
+      "id": "paytoll-aave-best-yield",
+      "description": "Find the best Aave V3 supply APY across all chains for a given asset. Costs $0.01 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:a6e5e36cc52bc22c360a7b852ff9db5f3843f60f1c223606530787d9ef3be40c",
+      "contentHash": "sha256:5862d664e369edcdd58c6ef98c8f9904802a9ca58d4f66ff7b8aa09862569a37",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-fund-escrow",
-      "description": "Fund escrow for a PayToll task to initiate work. The assigned agent will not begin until escrow is funded. USDC is locked until task completion or cancellation.",
+      "id": "paytoll-aave-borrow",
+      "description": "Build an Aave V3 borrow transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:f4477ff8afdf0b92e2a523e673297fb1de60d79d6e49b1ec77d5dce090729325",
+      "contentHash": "sha256:8e34817572fdfede51cee9b74aa7878f4bf6bc36509edfd86e94e078bdf84e8d",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-get-task-result",
-      "description": "Retrieve the final deliverable from a completed PayToll task. Only available after task status shows \"completed\". Returns the agent's work output and releases escrow payment.",
+      "id": "paytoll-aave-health-factor",
+      "description": "Get health factor and liquidation risk for an Aave V3 position. Costs $0.005 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:ccc465d19b5d5f3ff013e05b7124ae7c5b63dd976ee18551c3ab4c5483152e06",
+      "contentHash": "sha256:a11c0479dfbe09002e2e4cf0aae9b14cc9cc96cc94b607bd23b3aa1ef1a4a963",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-get-task-status",
-      "description": "Poll the status of a PayToll task. Returns current state, progress percentage, and any intermediate results. Use to monitor delegated work in progress.",
+      "id": "paytoll-aave-markets",
+      "description": "Get overview of all Aave V3 markets with TVL and rates. Costs $0.005 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:6a143a06a745ba9c84696b2545f0d264e8ed622fd765ca18433c118fc3b25dca",
+      "contentHash": "sha256:b5afc6f87ef106335519e214361560d1992d81e9dda7321b2d87e9463d133ab9",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
     {
-      "id": "paytoll-search-agents",
-      "description": "Search PayToll's agent marketplace by capability, price, or reputation. Returns matching agents with profiles and pricing for task delegation. Use when you need to find another agent to delegate work to.",
+      "id": "paytoll-aave-repay",
+      "description": "Build an Aave V3 repay transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:d37cbbdbd659704ef669a89205eaee8cb08ae031c073f77aa07158c8cd83524f",
+      "contentHash": "sha256:8e59e139817818e71b5543c6bc7050afbe399043a05f3407f72a3377676fc261",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-supply",
+      "description": "Build an Aave V3 supply (deposit) transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:4ace84e719f332020d1bfa9c0069d9fddd96d95ced8cbcffe13c130bdbbf2583",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-user-positions",
+      "description": "Get all Aave V3 positions for a wallet address across chains. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:009d51c3da2f60eaca8556c0c1914fb432635071c447f6830fcb869eb918783d",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-aave-withdraw",
+      "description": "Build an Aave V3 withdraw transaction. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:845616cfa47269e856d69674d8b047dcd9bdc54d70c07e3f9b2b8ff2a850c64b",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-crypto-price",
+      "description": "Get real-time crypto prices for any CoinGecko-listed coin. Returns price in USD/EUR/GBP/JPY with optional 24h volume and market cap data. Costs $0.015.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:94cc6f64b085eeb1c0466a34c5a8439f0826826cc289ebf9b70fc43f8db7706a",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-check",
+      "description": "Check ENS name availability and registration price. Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:c01a194dfb7360541437ff14164b58f5805080b91e39ff4e64e286f829a3443a",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-commit",
+      "description": "Build a commit transaction for ENS name registration (step 1 of 2-step registration process). Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:d0193d31f5994eddc0de309e8d0f2d1b0d38a61a3b1a03d9bcc0c107bd5e1c20",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-lookup",
+      "description": "Resolve ENS names to Ethereum addresses and perform reverse lookups. Optionally resolve avatar and text records. Costs $0.001 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:08559902e4dca38f88a51bef6ee62ffe16cb0d6436012138b592e958ed57c4e3",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-register",
+      "description": "Build a register transaction for ENS name registration (step 2 of 2-step process). Must wait at least 1 minute after commit. Free endpoint.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:b2eb551bdd0ed3671862e7a4fcc7cc7844954ef418d11f640644cff5a0eefbc6",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-ens-renew",
+      "description": "Build a renewal transaction for an existing ENS name. Free endpoint - no x402 payment required.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:ee9135bd9d9fb4f5c3a8b021002edab00507af18a75b5b8648f585c304e97b6c",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-anthropic",
+      "description": "Anthropic Claude chat completions proxy. Access Claude 3.5 Haiku and Claude 3 Haiku models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:4b257ce3848358b21dab57c81c46be7747a81cb22fcc5ada9d6f6b963e0b6da7",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-google",
+      "description": "Google Gemini chat completions proxy. Access Gemini 2.0 Flash and Flash Lite models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:76f0c5ec055d40cd25548f7045e612056dda4fbffce13064eb2adc065501bb9c",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-llm-openai",
+      "description": "OpenAI chat completions proxy. Access GPT-4o mini and GPT-3.5 Turbo models via pay-per-call. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:3f92ac9cb7b88e0c42a89100f2ff9ce215648670f1b847d0f9182cb5ee40bc18",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-onchain-token-data",
+      "description": "Get comprehensive on-chain token data including price, supply, FDV, market cap, and top pools. Powered by GeckoTerminal. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:c1b5b2d9422cee61eb96b7725b52805d361caded5e2418edb1b4e465b07aeb09",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-onchain-token-price",
+      "description": "Get on-chain token price by contract address and network. Powered by GeckoTerminal for DEX-based pricing. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:1cfb3c19564c23fc1609708ab243aa86ead013364b343184a214dfdd869a5033",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-search-pools",
+      "description": "Search liquidity pools by token name, symbol, or contract address across multiple networks. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:b0a81e2eedc657a02e8b0b21dc32bcbf3fb185a495818471e2e9f41e4df99481",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-swap-build",
+      "description": "Build a DEX swap transaction for signing via Li.Fi aggregator. Returns ready-to-sign transaction data. Costs $0.01 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:322de8088d97411354a1d5fcbb51c55e1af97eafcdc92c550d89dd9b7d24de2a",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-swap-quote",
+      "description": "Get a DEX swap price quote across chains via Li.Fi aggregator. Supports same-chain and cross-chain swaps. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:9c7a2e8a3f3cfa6022ed2f5e746feaeb8aa6980774cc32980fe42bfff3cb9cc2",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-token-balance",
+      "description": "Check wallet token balance on any supported chain including Ethereum, Base, Polygon, Arbitrum, Optimism, BSC, and Avalanche. Costs $0.005 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:1229e8868f398e2cc58c5e2d490c7cde45876ac27dc42e8e183578345a5ead67",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-trending-pools",
+      "description": "Get trending liquidity pools on a network sorted by trading activity. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:a36eda8514b72e1a3c96f58570c218700872ac99890d4bb0ffc241816d4afbd6",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-post",
+      "description": "Post a tweet using your OAuth access token. Supports replies and quote tweets. Costs $0.015 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:ba94b8138af03095f59805cced68865bd458fc242f718036c7083ba7fc261edc",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-search",
+      "description": "Search recent tweets (last 7 days) on X/Twitter. Supports advanced query syntax. Costs $0.08 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:d347a63ea51a0d2d44e7675ac00d5ae20aa365b46432ae2629318b940b9cf0dd",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-tweet-lookup",
+      "description": "Look up tweets by ID with metrics and author info. Supports up to 10 tweets per call. Costs $0.02 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:bb9ba55fa539efabea183dd2ae1737bdca46d2163961ff3343cc4889251b0811",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-user-lookup",
+      "description": "Look up X/Twitter user by username or user ID. Returns profile info, follower counts, and metrics. Costs $0.02 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:d2c90371adec9e4cbb3eb698affab5a5460bfa07aee0d65990e17183dd3fb691",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-twitter-user-tweets",
+      "description": "Get a user's recent tweets by user ID. Can exclude replies and retweets. Costs $0.08 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:5f373bc3b9136b3eaa58db1cb878bfb427cd775ee1505f857dd1bbb7228485d5",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-wallet-validator",
+      "description": "Validate cryptocurrency wallet addresses with checksum verification for Ethereum, Bitcoin, and Solana networks. Costs $0.0005 per call.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:5e711926b7c8e64801a8b799c3bea831a35d6f19ab2f0b9fdd2529d38339f577",
       "requiresEnv": [],
       "hasExecutionManifest": true
     },
