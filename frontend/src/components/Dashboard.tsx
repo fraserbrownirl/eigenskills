@@ -7,7 +7,8 @@ import {
   AgentStatusCard,
   ContainerLogs,
   ExecutionHistory,
-  SettingsPanel,
+  MessagingPanel,
+  SecretsPanel,
   SkillsPanel,
   TabNavigation,
   TaskInterface,
@@ -121,7 +122,7 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
             {activeTab === "skills" && (
               <SkillsPanel
                 skills={skillsCatalog}
-                onMissingVarClick={() => setActiveTab("settings")}
+                onMissingVarClick={() => setActiveTab("secrets")}
               />
             )}
 
@@ -133,14 +134,9 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
               <ContainerLogs logs={logs} loading={logsLoading} onRefresh={refreshLogs} />
             )}
 
-            {activeTab === "settings" && (
-              <SettingsPanel
-                token={token}
-                onCancel={() => setActiveTab("task")}
-                onSaved={() => setActiveTab("task")}
-                onError={setError}
-              />
-            )}
+            {activeTab === "messaging" && <MessagingPanel token={token} onError={setError} />}
+
+            {activeTab === "secrets" && <SecretsPanel token={token} onError={setError} />}
           </div>
         </div>
       )}
