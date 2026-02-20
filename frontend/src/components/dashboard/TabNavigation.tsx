@@ -10,7 +10,7 @@ interface TabNavigationProps {
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
-  const tabs = [
+  const tabs: { id: TabType; label: string; icon: typeof Terminal }[] = [
     { id: "task", label: "Task", icon: Terminal },
     { id: "skills", label: "Skills", icon: Code },
     { id: "history", label: "History", icon: List },
