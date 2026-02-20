@@ -25,7 +25,7 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 | `src/registry.ts` | Fetches/caches registry.json from GitHub | `listSkills()`, `getSkill()`, `fetchRegistry()` |
 | `src/executor.ts` | Sandboxed skill execution | `executeSkill()` |
 | `src/logger.ts` | Signed execution log (in-memory, 1000 cap) | `log()`, `getHistory()` |
-| `Dockerfile` | TEE-compatible image (linux/amd64, root, Python) | — |
+| `Dockerfile` | Simple image (linux/amd64, root, Python) — CLI auto-layers TEE tools | — |
 
 ### Backend (`backend/`)
 
@@ -34,8 +34,8 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 | `src/index.ts` | Express server + all API routes | App startup, 8 route handlers |
 | `src/auth.ts` | SIWE verification + HMAC session tokens | `verifySiweMessage()`, `createToken()`, `requireAuth` middleware |
 | `src/db.ts` | SQLite database (users + agents tables) | `createUser()`, `createAgent()`, `getAgentByUser()`, `updateAgent()` |
-| `src/eigencompute.ts` | Deploy strategy router (SDK / GitHub Actions / CLI) | `deployAgent()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()`, `getAppInfo()` |
-| `src/eigencompute-sdk.ts` | Direct `@layr-labs/ecloud-sdk` integration (no Docker, no CLI) | `deployAgent()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()` |
+| `src/eigencompute.ts` | Deploy orchestrator (CLI primary, SDK fallback) | `deployAgent()`, `deployViaCli()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()`, `getAppInfo()` |
+| `src/eigencompute-sdk.ts` | SDK fallback via `@layr-labs/ecloud-sdk` (no Docker, no CLI) | `deployAgent()`, `upgradeAgent()`, `stopAgent()`, `startAgent()`, `terminateAgent()` |
 
 ### Frontend (`frontend/src/`)
 
@@ -65,7 +65,7 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 | Method | Path | Request Body | Response | Description |
 |--------|------|--------------|----------|-------------|
 | POST | `/api/auth/verify` | `{ message, signature }` | `{ token, address, agent? }` | Verify SIWE, issue session token |
-| POST | `/api/agents/deploy` | `{ name, envVars: [{key, value, isPublic}] }` | `{ agent }` | Deploy new agent to EigenCompute |
+| POST | `/api/agents/deploy` | `{ name, envVars: [{key, value, isPublic}], verifiable? }` | `{ agent }` | Deploy new agent to EigenCompute |
 | POST | `/api/agents/upgrade` | `{ envVars }` | `{ success }` | Update agent env vars |
 | POST | `/api/agents/stop` | — | `{ success }` | Pause agent |
 | POST | `/api/agents/start` | — | `{ success }` | Resume agent |
@@ -106,9 +106,10 @@ Frontend                    Backend                     Agent (TEE)
 - Sandboxed skill execution (restricted env vars)
 - Signed execution logging
 - SIWE authentication (frontend + backend)
-- EigenCompute SDK integration — direct TypeScript deploys via `@layr-labs/ecloud-sdk` (no Docker daemon, no CLI)
-- Legacy CLI and GitHub Actions deploy paths preserved as fallbacks
-- 4-step agent setup wizard
+- Simplified CLI-based deployment — `ecloud` CLI auto-layers TEE tools at deploy time
+- SDK fallback when CLI fails (non-verifiable builds only)
+- Verifiable build toggle in frontend — user chooses on-chain attestation
+- 4-step agent setup wizard with verifiable build option
 - Dashboard with status, controls, task submission
 - Skill registry with 3 skills + GitHub Action CI
 
@@ -144,18 +145,18 @@ Frontend                    Backend                     Agent (TEE)
 
 ## Known Gotchas
 
-### Deploy Strategy (`DEPLOY_STRATEGY` env var)
-The backend supports three deployment strategies, controlled by `DEPLOY_STRATEGY`:
+### Deploy Strategy (CLI Primary)
+The backend uses CLI-based deployment as the primary path, with SDK as fallback:
 
-| Strategy | Env Value | Docker Needed? | Description |
+| Strategy | When Used | Docker Needed? | Description |
 |----------|-----------|----------------|-------------|
-| **SDK** (default) | `sdk` | No | Uses `@layr-labs/ecloud-sdk` TypeScript package directly. Handles KMS encryption, on-chain transactions, and UserAPI calls internally. Works on any host (Fly.io, Render, Railway, local). |
-| **GitHub Actions** | `github-actions` | No (on host) | Triggers a GitHub Actions workflow that runs the `ecloud` CLI. Async — results delivered via webhook. Legacy fallback. |
-| **CLI** | `cli` | Yes | Shells out to `ecloud` CLI directly. Only works where Docker daemon is available (local dev). |
+| **CLI** (primary) | Always tried first | No (on backend) | Shells out to `ecloud` CLI with tested flags. CLI auto-layers TEE tools (KMS client, env script) at deploy time. Simple Dockerfile, no manual TEE setup. |
+| **SDK** (fallback) | When CLI fails + non-verifiable | No | Falls back to `@layr-labs/ecloud-sdk` TypeScript package. Only used for non-verifiable builds when CLI errors. |
+| **GitHub Actions** | When `USE_GITHUB_ACTIONS=true` | No (on host) | Triggers a GitHub Actions workflow. Async — results delivered via webhook. Legacy option. |
 
-The legacy `USE_GITHUB_ACTIONS=true` env var maps to `github-actions` strategy for backward compatibility.
+**Verifiable Build Toggle:** The frontend exposes a toggle for "Verifiable Build" (default: on). When enabled, the CLI answers "y" to "Build from verifiable source?" prompt, generating on-chain attestation. When disabled, answers "n" for faster deploys without source verification.
 
-The SDK path uses `prepareDeployFromVerifiableBuild()` which explicitly skips Docker checks and image layering. It fetches the image digest from Docker Hub API, encrypts env vars via the SDK's built-in KMS encryption, and submits the on-chain transaction directly.
+**Why CLI over SDK?** The CLI handles TEE tooling automatically (auto-layers `compute-source-env.sh`, `kms-client`, labels, ENTRYPOINT). The SDK's `prepareDeployFromVerifiableBuild()` skips layering, requiring manual TEE setup in Dockerfile — more complex for no benefit.
 
 ### Wallet: viem, not ethers
 Agent wallet uses `viem` (`mnemonicToAccount`). The `ethers` package is in dependencies but unused.

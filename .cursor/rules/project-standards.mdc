@@ -23,13 +23,13 @@ Three components:
 - EigenAI model: `gpt-oss-120b-f16` (only documented model)
 - EigenAI Sepolia: `https://eigenai-sepolia.eigencloud.xyz/v1/chat/completions`
 - EigenAI Mainnet: `https://eigenai.eigencloud.xyz/v1/chat/completions`
-- Dockerfile must use `--platform=linux/amd64` and `USER root`
+- Dockerfile must use `--platform=linux/amd64` and `USER root` — keep it simple, CLI auto-layers TEE tools
 - **HTTP servers in TEE must bind `0.0.0.0`** — `app.listen(PORT, "0.0.0.0", cb)` not just `app.listen(PORT, cb)` — localhost binding makes the container unreachable
 - Env vars ending in `_PUBLIC` are visible on-chain; all others are encrypted in TEE
 - Skills declare `requires_env` — executor only passes those vars to subprocess
 - Auth is SIWE (Sign In With Ethereum), no passwords
 - No staking contract — curated registry is the trust model
-- **EigenCompute deploys use `@layr-labs/ecloud-sdk`** (TypeScript SDK, no Docker/CLI needed). See `backend/src/eigencompute-sdk.ts`. The `DEPLOY_STRATEGY` env var controls the path: `sdk` (default), `github-actions`, or `cli`.
+- **EigenCompute deploys use CLI primary** with SDK fallback. See `backend/src/eigencompute.ts`. CLI auto-layers TEE tools at deploy time. Frontend has a "Verifiable Build" toggle (default: on) for on-chain attestation.
 
 ## Context7 Library IDs
 

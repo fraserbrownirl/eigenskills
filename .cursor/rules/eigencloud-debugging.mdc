@@ -56,15 +56,17 @@ Compare project docs with official docs, then implement fixes with citations.
 
 ## Deploy Strategy
 
-The backend uses `DEPLOY_STRATEGY` env var to choose the deployment path:
+The backend uses CLI as the primary deployment path with SDK as fallback:
 
-| Strategy | Value | Docker? | File |
-|----------|-------|---------|------|
-| **SDK** (default) | `sdk` | No | `backend/src/eigencompute-sdk.ts` — uses `@layr-labs/ecloud-sdk` |
-| GitHub Actions | `github-actions` | No (on host) | `backend/src/eigencompute.ts` — triggers workflow |
-| CLI | `cli` | Yes | `backend/src/eigencompute.ts` — shells out to `ecloud` CLI |
+| Strategy | When Used | Docker? | File |
+|----------|-----------|---------|------|
+| **CLI** (primary) | Always tried first | No | `backend/src/eigencompute.ts` — `deployViaCli()` with tested flags |
+| SDK (fallback) | When CLI fails + non-verifiable | No | `backend/src/eigencompute-sdk.ts` — uses `@layr-labs/ecloud-sdk` |
+| GitHub Actions | When `USE_GITHUB_ACTIONS=true` | No (on host) | `backend/src/eigencompute.ts` — triggers workflow |
 
-**Prefer the SDK path.** It handles KMS encryption, on-chain transactions, and the UserAPI internally. The CLI and GitHub Actions paths are legacy fallbacks.
+**CLI is preferred** because it auto-layers TEE tools (KMS client, env script, labels, ENTRYPOINT) at deploy time. This allows a simple Dockerfile without manual TEE setup. The SDK path skips auto-layering and would require manual TEE toolchain in the Dockerfile.
+
+**Verifiable Build:** The CLI prompts "Build from verifiable source?" — the frontend exposes this as a toggle (default: true). Answer is piped via `echo "y"` or `echo "n"`.
 
 ## Known Issues and Solutions
 
@@ -93,9 +95,9 @@ The backend uses `DEPLOY_STRATEGY` env var to choose the deployment path:
 - Guess CLI syntax without checking both project docs AND Context7
 - Assume flag names (they may differ between CLI versions)
 - Skip the documentation lookup even if you think you know the answer
-- Use `yes N |` for piping (causes buffer overflow)
+- Use `yes N |` for piping (causes buffer overflow) — use `echo "y"` or `echo "n"` instead
 - Pass image reference as positional argument (use `--image-ref` flag)
 - Log raw `execSync` errors without sanitizing private keys
-- Use the CLI or GitHub Actions strategy when the SDK strategy works (it's simpler and more reliable)
+- Add TEE tools to Dockerfile manually — CLI auto-layers them at deploy time
 - Bind Express/HTTP servers to `localhost` — always use `0.0.0.0` in containers deployed to EigenCompute
 - Use `logVisibility: "public"` — hardened TEE mode blocks it; use `"private"` instead

@@ -480,13 +480,15 @@ async function getImageDigest(imageRef: string): Promise<string> {
 
 #### Deploy Strategies
 
-The backend supports three deploy strategies via `DEPLOY_STRATEGY` env var:
+The backend uses CLI as primary with SDK fallback:
 
-| Strategy | Value | Docker? | Description |
-|----------|-------|---------|-------------|
-| SDK (default) | `sdk` | No | `@layr-labs/ecloud-sdk` — direct TypeScript, works anywhere |
-| GitHub Actions | `github-actions` | No (on host) | Triggers workflow, async webhook callback |
-| CLI | `cli` | Yes | Shells out to `ecloud` CLI binary |
+| Strategy | When Used | Docker? | Description |
+|----------|-----------|---------|-------------|
+| **CLI** (primary) | Always tried first | No | `ecloud` CLI with tested flags, auto-layers TEE tools |
+| SDK (fallback) | When CLI fails + non-verifiable | No | `@layr-labs/ecloud-sdk` — only for non-verifiable builds |
+| GitHub Actions | When `USE_GITHUB_ACTIONS=true` | No (on host) | Triggers workflow, async webhook callback |
+
+**Note:** The `DEPLOY_STRATEGY` env var is still read but CLI is always tried first regardless of its value (unless GitHub Actions is explicitly enabled).
 
 ### Legacy: `ecloud` CLI Usage
 
@@ -623,43 +625,50 @@ docker push username/eigenskills-agent:latest
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### SDK Deploy Path vs CLI Auto-Layering
+### CLI Auto-Layering (Recommended)
 
-The ecloud CLI's normal `deploy` command automatically "layers" your Docker image:
+The `ecloud` CLI's `deploy` command automatically "layers" your Docker image with TEE tooling:
 - Adds `compute-source-env.sh` as ENTRYPOINT
 - Adds `kms-client` binary
 - Adds `kms-signing-public-key.pem`
-- Adds TEE labels
+- Adds required TEE labels
 
-But `prepareDeployFromVerifiableBuild` (SDK path) **skips layering** — it deploys your image as-is. This means:
-
-**If using SDK deploy, your Dockerfile must include the TEE toolchain:**
+**This means your Dockerfile can be simple** — no manual TEE setup required:
 
 ```dockerfile
-# TEE tooling (required for SDK deploys)
-COPY tee-tools/compute-source-env.sh /usr/local/bin/
-COPY tee-tools/kms-client /usr/local/bin/
-COPY tee-tools/kms-signing-public-key.pem /usr/local/bin/
-RUN chmod 755 /usr/local/bin/compute-source-env.sh \
-    && chmod 755 /usr/local/bin/kms-client \
-    && chmod 644 /usr/local/bin/kms-signing-public-key.pem
+FROM --platform=linux/amd64 node:18
+USER root
+WORKDIR /app
 
-LABEL tee.launch_policy.log_redirect=always
-LABEL tee.launch_policy.monitoring_memory_allow=always
-LABEL eigenx_use_ita=True
+COPY package*.json ./
+RUN npm install
+COPY . .
 
-ENTRYPOINT ["/usr/local/bin/compute-source-env.sh"]
-CMD ["your", "app", "command"]
+EXPOSE 3000
+CMD ["npm", "start"]
 ```
 
-The `tee-tools/` files can be extracted from the `@layr-labs/ecloud-sdk` package:
-- `kms-client` → `node_modules/@layr-labs/ecloud-sdk/tools/kms-client-linux-amd64`
-- `kms-signing-public-key.pem` → extracted from SDK's `getKMSKeysForEnvironment()` for your target chain
-- `compute-source-env.sh` → render the SDK's embedded Handlebars template with chain-specific URLs
+The CLI handles all TEE tooling automatically at deploy time.
 
-**Chain-specific values (sepolia/prod):**
-- `kmsServerURL`: `http://10.128.15.203:8080`
-- `userAPIURL`: `https://userapi-compute-sepolia-prod.eigencloud.xyz`
+### SDK Path (Fallback Only)
+
+The SDK's `prepareDeployFromVerifiableBuild()` **skips auto-layering** — it deploys your image as-is. This was previously the default but required manual TEE toolchain setup in the Dockerfile.
+
+**The CLI path is now preferred** because:
+1. Simpler Dockerfiles (no TEE tools to maintain)
+2. CLI auto-layers the latest TEE toolchain
+3. Supports verifiable build prompt (user choice for on-chain attestation)
+
+The SDK is only used as a fallback when CLI fails and the build is non-verifiable.
+
+### Verifiable Build Option
+
+When deploying via CLI, there's one interactive prompt: "Build from verifiable source?" (y/N)
+
+- **Yes (verifiable):** Creates on-chain attestation proving the source code matches the deployed image
+- **No (standard):** Faster deployment without source verification
+
+The frontend exposes this as a toggle in the agent setup wizard (default: verifiable).
 
 ### Debugging Checklist
 
@@ -667,6 +676,5 @@ When env vars aren't reaching the container:
 
 1. **Check /whoami endpoint** — if `agentAddress` is zero address, MNEMONIC didn't arrive
 2. **Check TEE logs** — look for "compute-source-env.sh" or "kms-client" output
-3. **Verify Dockerfile** — ENTRYPOINT must be `compute-source-env.sh`, not your app
-4. **Verify labels** — `tee.launch_policy.log_redirect=always` required for hardened mode
-5. **Check backend injection** — system vars (MNEMONIC, BACKEND_URL) must be in the envVars array passed to `deployAgent()`
+3. **Verify CLI was used** — CLI auto-layers TEE tooling; SDK path requires manual setup
+4. **Check backend injection** — system vars (MNEMONIC, BACKEND_URL) must be in the envVars array passed to `deployAgent()`
