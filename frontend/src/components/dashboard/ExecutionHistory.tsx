@@ -40,7 +40,7 @@ export function ExecutionHistory({ history, onRefresh: _onRefresh }: ExecutionHi
                     <p className="font-medium text-foreground">{item.task || "Unknown Task"}</p>
                     <span className="text-xs text-muted-foreground flex items-center gap-1">
                       <Clock className="h-3 w-3" />
-                      {new Date(item.timestamp).toLocaleString()}
+                      {item.timestamp ? new Date(item.timestamp).toLocaleString() : "Unknown"}
                     </span>
                   </div>
                   <p className="text-sm text-muted-foreground line-clamp-2">
