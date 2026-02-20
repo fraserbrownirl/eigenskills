@@ -1022,21 +1022,85 @@ app.post("/api/agents/task", requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/agents/skills — proxy to agent's skills endpoint
+// Registry URL for skills
+const REGISTRY_URL =
+  "https://raw.githubusercontent.com/fraserbrownirl/eigenskills-v2/main/registry/registry.json";
+
+interface RegistrySkill {
+  id: string;
+  description: string;
+  version: string;
+  author: string;
+  contentHash: string;
+  requiresEnv: string[];
+  hasExecutionManifest: boolean;
+  x402?: { enabled: boolean; costPerCall: string; currency: string; network: string };
+}
+
+// Fetch skills directly from GitHub registry
+async function fetchSkillsRegistry(): Promise<RegistrySkill[]> {
+  const response = await fetch(REGISTRY_URL);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch registry: ${response.status}`);
+  }
+  const data = (await response.json()) as { skills: RegistrySkill[] };
+  return data.skills;
+}
+
+// GET /api/agents/skills — fetch from GitHub, filter by agent's env vars
 app.get("/api/agents/skills", requireAuth, async (req, res) => {
   try {
-    await proxyGetToAgent(req, res, "/skills", "skills");
+    const userAddress = getUserAddress(req);
+    const agent = getAgentByUser(userAddress);
+    const skills = await fetchSkillsRegistry();
+
+    // Get agent's env var keys
+    const agentEnvKeys = new Set<string>();
+    if (agent?.env_vars) {
+      const envVars = JSON.parse(decryptEnvVars(agent.env_vars)) as { key: string }[];
+      envVars.forEach((v) => agentEnvKeys.add(v.key));
+    }
+
+    // Filter to skills where all required env vars are present
+    const availableSkills = skills.filter((skill) =>
+      skill.requiresEnv.every((key) => agentEnvKeys.has(key))
+    );
+
+    res.json({ skills: availableSkills });
   } catch (error) {
-    handleAgentProxyError(res, error, "Skills proxy");
+    console.error("Skills fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch skills" });
   }
 });
 
-// GET /api/agents/skills-catalog — proxy to agent's skills-catalog endpoint
+// GET /api/agents/skills-catalog — fetch from GitHub, show all with status
 app.get("/api/agents/skills-catalog", requireAuth, async (req, res) => {
   try {
-    await proxyGetToAgent(req, res, "/skills-catalog", "skills catalog");
+    const userAddress = getUserAddress(req);
+    const agent = getAgentByUser(userAddress);
+    const skills = await fetchSkillsRegistry();
+
+    // Get agent's env var keys
+    const agentEnvKeys = new Set<string>();
+    if (agent?.env_vars) {
+      const envVars = JSON.parse(decryptEnvVars(agent.env_vars)) as { key: string }[];
+      envVars.forEach((v) => agentEnvKeys.add(v.key));
+    }
+
+    // Map to catalog entries with enabled/disabled status
+    const catalog = skills.map((skill) => {
+      const missingEnvVars = skill.requiresEnv.filter((key) => !agentEnvKeys.has(key));
+      return {
+        ...skill,
+        status: missingEnvVars.length === 0 ? "enabled" : "disabled",
+        missingEnvVars,
+      };
+    });
+
+    res.json({ skills: catalog });
   } catch (error) {
-    handleAgentProxyError(res, error, "Skills catalog proxy");
+    console.error("Skills catalog fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch skills catalog" });
   }
 });
 

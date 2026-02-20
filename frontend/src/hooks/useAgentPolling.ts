@@ -61,14 +61,13 @@ export function useAgentPolling({
   }, [token]);
 
   const refreshSkills = useCallback(async () => {
-    if (!agent?.instanceIp) return;
     try {
       const catalog = await getSkillsCatalog(token);
       setSkillsCatalog(catalog);
     } catch {
       console.error("Failed to fetch skills catalog");
     }
-  }, [token, agent?.instanceIp]);
+  }, [token]);
 
   const refreshHistory = useCallback(async () => {
     if (!agent?.instanceIp) return;
@@ -101,7 +100,7 @@ export function useAgentPolling({
   }, [refreshInfo, pollInterval]);
 
   useEffect(() => {
-    if (activeTab === "skills" && agent?.instanceIp) {
+    if (activeTab === "skills") {
       refreshSkills();
     } else if (activeTab === "history" && agent?.instanceIp) {
       refreshHistory();

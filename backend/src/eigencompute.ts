@@ -14,9 +14,8 @@ const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER ?? "fraserbrownirl";
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME ?? "eigenskills-v2";
 const BACKEND_WEBHOOK_URL = process.env.BACKEND_WEBHOOK_URL ?? "";
 
-// Deploy strategy: "sdk" (default) uses @layr-labs/ecloud-sdk directly (no Docker needed),
-// "github-actions" triggers a GitHub Actions workflow, "cli" shells out to ecloud CLI (needs Docker).
-const DEPLOY_STRATEGY = process.env.DEPLOY_STRATEGY ?? "sdk";
+// Legacy: DEPLOY_STRATEGY is no longer used — CLI is the only path.
+// Kept for backward compatibility but ignored.
 
 // Legacy flag — maps to DEPLOY_STRATEGY for backward compatibility
 const USE_GITHUB_ACTIONS = process.env.USE_GITHUB_ACTIONS === "true";
@@ -171,7 +170,7 @@ interface EcloudCommandOptions {
 
 /**
  * Build and execute an ecloud CLI command with common options.
- * - Adds --environment flag automatically
+ * - Adds --environment and --private-key flags automatically
  * - Pipes "echo N |" for interactive commands to auto-answer prompts
  * - Sanitizes error output to prevent key leakage
  */
@@ -187,10 +186,11 @@ function runEcloudCommand(
     parts.push(appId);
   }
   parts.push(`--environment ${EIGENCOMPUTE_ENVIRONMENT}`);
+  parts.push(`--private-key ${EIGENCOMPUTE_PRIVATE_KEY}`);
   parts.push(...extraFlags);
 
   const command = parts.join(" ");
-  const fullCommand = interactive ? `echo N | ${command}` : command;
+  const fullCommand = interactive ? `echo "n" | ${command}` : command;
 
   return execWithSanitizedErrors(fullCommand, getExecOptions(timeout));
 }
@@ -273,8 +273,15 @@ export async function triggerGitHubDeploy(
 }
 
 /**
- * Deploy via CLI with the tested command that works non-interactively.
- * The only interactive prompt is "Build from verifiable source?" which we answer with y/n.
+ * Deploy via CLI with all flags specified.
+ *
+ * Interactive prompts:
+ * 1. "Build from verifiable source?" (y/N)
+ * 2. If yes: "Choose verifiable source type:" (list selection) — requires TTY
+ *
+ * NOTE: Verifiable builds require a real TTY for the list selection prompt.
+ * Since we can't simulate TTY without `expect`, we always use non-verifiable.
+ * The verifiable parameter is logged but not used until EigenCloud adds a CLI flag.
  */
 async function deployViaCli(
   name: string,
@@ -293,8 +300,6 @@ async function deployViaCli(
   const envFilePath = buildEnvFile(envVars);
 
   try {
-    const answer = verifiable ? "y" : "n";
-
     const command = [
       "ecloud compute app deploy",
       `--name ${safeName}`,
@@ -305,15 +310,19 @@ async function deployViaCli(
       "--skip-profile",
       "--log-visibility private",
       `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
+      `--private-key ${EIGENCOMPUTE_PRIVATE_KEY}`,
     ].join(" ");
 
-    console.log(`[CLI] Deploying agent: ${safeName} (verifiable: ${verifiable})`);
+    console.log(`[CLI] Deploying agent: ${safeName}`);
     console.log(`[CLI] Image: ${AGENT_IMAGE_REF}`);
+    if (verifiable) {
+      console.log(`[CLI] Note: Verifiable builds require TTY — deploying without verification`);
+    }
 
-    const output = execWithSanitizedErrors(
-      `echo "${answer}" | ${command}`,
-      getExecOptions(TIMEOUT_DEPLOY)
-    );
+    // Always answer "n" — verifiable builds require TTY for list selection prompt
+    const fullCommand = `echo "n" | ${command}`;
+
+    const output = execWithSanitizedErrors(fullCommand, getExecOptions(TIMEOUT_DEPLOY));
 
     const appIdMatch =
       output.match(/App ID:\s*(\S+)/i) ?? output.match(/\bID:\s*(0x[a-fA-F0-9]+)/i);
@@ -343,10 +352,10 @@ async function deployViaCli(
 /**
  * Deploy a new agent instance to EigenCompute.
  *
- * Strategy: CLI primary with SDK fallback.
- * - GitHub Actions takes priority if configured (async deployment)
- * - CLI is the primary path (simpler, tested command)
- * - SDK is fallback when CLI fails (only for non-verifiable builds)
+ * Strategy:
+ * 1. GitHub Actions if configured (async)
+ * 2. CLI primary — requires Docker for TEE auto-layering
+ * 3. SDK fallback — no Docker needed, but no verifiable builds
  */
 export async function deployAgent(
   name: string,
@@ -354,30 +363,30 @@ export async function deployAgent(
   verifiable: boolean = false
 ): Promise<DeployResult | AsyncDeployResult> {
   const safeName = validateShellInput(name, "agent name");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
 
-  // GitHub Actions (async) takes priority if configured
-  if (strategy === "github-actions") {
+  // GitHub Actions (async) if configured
+  if (USE_GITHUB_ACTIONS) {
     return triggerGitHubDeploy("deploy-agent", {
       appName: safeName,
       envVars,
     });
   }
 
-  // Primary: CLI
+  // CLI deploy (primary path) — requires Docker
   try {
     return await deployViaCli(safeName, envVars, verifiable);
   } catch (cliError) {
-    console.warn("[CLI deploy failed, trying SDK fallback]", cliError);
+    const errorMsg = cliError instanceof Error ? cliError.message : String(cliError);
 
-    // Fallback: SDK (only for non-verifiable, SDK doesn't support verifiable choice)
-    if (!verifiable && strategy === "sdk") {
+    // If Docker not available, fall back to SDK
+    if (errorMsg.includes("Docker is not running") || errorMsg.includes("docker")) {
+      console.log("[CLI] Docker not available, falling back to SDK");
       try {
         const sdk = await import("./eigencompute-sdk.js");
         return await sdk.deployAgent(safeName, envVars);
       } catch (sdkError) {
-        console.error("[SDK fallback also failed]", sdkError);
-        throw cliError; // Throw original CLI error
+        console.error("[SDK fallback failed]", sdkError);
+        throw sdkError;
       }
     }
 
@@ -417,12 +426,6 @@ const INFO_FAIL_COOLDOWN_MS = 60_000;
  */
 export async function getAppInfo(appId: string): Promise<AppInfo> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.getAppInfo(safeAppId);
-  }
 
   const cached = appInfoCache.get(safeAppId);
   if (cached) {
@@ -469,14 +472,8 @@ export async function upgradeAgent(
   envVars: EnvVar[]
 ): Promise<void | AsyncDeployResult> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
 
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.upgradeAgent(safeAppId, envVars);
-  }
-
-  if (strategy === "github-actions") {
+  if (USE_GITHUB_ACTIONS) {
     return triggerGitHubDeploy("upgrade-agent", {
       appName: safeAppId,
       appId: safeAppId,
@@ -484,7 +481,6 @@ export async function upgradeAgent(
     });
   }
 
-  // CLI fallback (needs Docker daemon)
   const envFilePath = buildEnvFile(envVars);
 
   try {
@@ -507,13 +503,6 @@ export async function upgradeAgent(
  */
 export async function stopAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.stopAgent(safeAppId);
-  }
-
   runEcloudCommand("stop", safeAppId, { interactive: true });
 }
 
@@ -522,13 +511,6 @@ export async function stopAgent(appId: string): Promise<void> {
  */
 export async function startAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.startAgent(safeAppId);
-  }
-
   runEcloudCommand("start", safeAppId, { interactive: true });
 }
 
@@ -537,13 +519,6 @@ export async function startAgent(appId: string): Promise<void> {
  */
 export async function terminateAgent(appId: string): Promise<void> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.terminateAgent(safeAppId);
-  }
-
   runEcloudCommand("terminate", safeAppId, { interactive: true });
 }
 
@@ -552,13 +527,6 @@ export async function terminateAgent(appId: string): Promise<void> {
  */
 export async function getAppLogs(appId: string, lines: number = 100): Promise<string> {
   const safeAppId = validateShellInput(appId, "app ID");
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.getAppLogs(safeAppId, lines);
-  }
-
   const safeLines = Math.min(Math.max(1, Math.floor(lines)), MAX_LOG_LINES);
   return runEcloudCommand("logs", safeAppId, {
     timeout: TIMEOUT_INFO,

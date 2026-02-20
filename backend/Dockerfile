@@ -17,7 +17,10 @@ FROM node:20-bookworm-slim AS production
 
 WORKDIR /app
 
-# ecloud CLI no longer needed — @layr-labs/ecloud-sdk handles deploys directly
+# Install ecloud CLI (required for EigenCompute deploys)
+RUN apt-get update && apt-get install -y curl ca-certificates && \
+    curl -fsSL https://raw.githubusercontent.com/Layr-Labs/eigencloud-tools/master/install-all.sh | bash && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Production deps only
 COPY package.json package-lock.json* ./
