@@ -4,7 +4,7 @@ description: >
   Look up X/Twitter user by username or user ID. Returns profile info,
   follower counts, and metrics. Costs $0.02 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Twitter User Lookup
 
-Look up user by username or ID via PayToll.
+Look up X/Twitter user by username or user ID via [[x402-payments]]. Returns profile info, follower counts, and metrics.
+
+Use to research users found via [[paytoll-twitter-search]], then get their recent tweets with [[paytoll-twitter-user-tweets]].
+
+Part of the [[social]] domain.
 
 ## Parameters
 

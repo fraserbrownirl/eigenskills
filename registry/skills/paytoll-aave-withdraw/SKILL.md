@@ -4,7 +4,7 @@ description: >
   Build an Aave V3 withdraw transaction. Returns ready-to-sign transaction
   data. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Aave Withdraw
 
-Build Aave V3 withdraw transaction.
+Build Aave V3 withdraw transactions via [[x402-payments]]. Remove assets you supplied with [[paytoll-aave-supply]].
+
+If you have active borrows, check [[paytoll-aave-health-factor]] before withdrawing — removing collateral lowers your health factor. Use [[paytoll-aave-repay]] first if needed.
+
+See [[aave-lending]] for the full lending lifecycle.
 
 ## Parameters
 

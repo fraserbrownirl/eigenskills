@@ -141,13 +141,23 @@ export function initDatabase(dbPath: string): Database.Database {
     }
   }
 
+  // Migration: add correction_count to learnings for 3x confirmation rule
+  try {
+    db.exec(`ALTER TABLE learnings ADD COLUMN correction_count INTEGER DEFAULT 1`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes("duplicate column")) {
+      throw err;
+    }
+  }
+
   return db;
 }
 
 // Production database singleton (DB_DIR for Railway/volume mount)
 const DB_DIR = process.env.DB_DIR ?? join(__dirname, "..", "data");
 mkdirSync(DB_DIR, { recursive: true });
-const db = initDatabase(join(DB_DIR, "eigenskills.db"));
+const db = initDatabase(join(DB_DIR, "skillsseal.db"));
 
 export interface Agent {
   id: number;
@@ -225,6 +235,7 @@ export interface LearningRow {
   area: string | null;
   signature: string;
   created_at: string;
+  correction_count: number;
 }
 
 export interface WorkspaceFileRow {
@@ -283,13 +294,20 @@ export interface DbOperations {
       area?: string;
       signature: string;
     }
-  ): void;
+  ): { isRepeat: boolean; correctionCount: number; needsConfirmation: boolean };
   listLearnings(
     userAddress: string,
     filters?: { status?: string; entryType?: string }
   ): LearningRow[];
   searchLearnings(userAddress: string, query: string): LearningRow[];
   updateLearningStatus(entryId: string, status: string, promotedTo?: string): boolean;
+  deleteLearning(userAddress: string, entryId: string): boolean;
+  getLearningStats(userAddress: string): {
+    total: number;
+    confirmed: number;
+    pending: number;
+    byType: Record<string, number>;
+  };
   saveWorkspaceFile(
     userAddress: string,
     filename: string,
@@ -473,14 +491,61 @@ export function createDbOperations(database: Database.Database): DbOperations {
         area?: string;
         signature: string;
       }
-    ): void {
+    ): { isRepeat: boolean; correctionCount: number; needsConfirmation: boolean } {
+      const normalizedAddress = userAddress.toLowerCase();
+      const normalizedSummary = entry.summary.toLowerCase().trim();
+
+      // Check for similar existing learning (same type, similar summary)
+      const existing = database
+        .prepare(
+          `SELECT entry_id, summary, correction_count, status FROM learnings 
+           WHERE user_address = ? AND entry_type = ? AND status IN ('pending', 'confirmed')`
+        )
+        .all(normalizedAddress, entry.entryType) as Array<{
+        entry_id: string;
+        summary: string;
+        correction_count: number;
+        status: string;
+      }>;
+
+      // Simple similarity: check if summaries share significant words
+      const summaryWords = new Set(normalizedSummary.split(/\s+/).filter((w) => w.length > 3));
+      const similar = existing.find((row) => {
+        const rowWords = row.summary
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length > 3);
+        const overlap = rowWords.filter((w) => summaryWords.has(w)).length;
+        return overlap >= Math.min(2, summaryWords.size * 0.5);
+      });
+
+      if (similar) {
+        // Increment the existing learning's count
+        const newCount = (similar.correction_count ?? 1) + 1;
+        const newStatus = newCount >= 3 ? "pending_confirmation" : similar.status;
+
+        database
+          .prepare(
+            `UPDATE learnings SET correction_count = ?, content = ?, signature = ?, 
+             status = ?, created_at = datetime('now') WHERE entry_id = ?`
+          )
+          .run(newCount, entry.content, entry.signature, newStatus, similar.entry_id);
+
+        return {
+          isRepeat: true,
+          correctionCount: newCount,
+          needsConfirmation: newCount >= 3,
+        };
+      }
+
+      // No similar learning found — create new
       database
         .prepare(
-          `INSERT INTO learnings (user_address, entry_id, entry_type, category, summary, content, priority, area, signature)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `INSERT INTO learnings (user_address, entry_id, entry_type, category, summary, content, priority, area, signature, correction_count)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
         )
         .run(
-          userAddress.toLowerCase(),
+          normalizedAddress,
           entry.entryId,
           entry.entryType,
           entry.category ?? null,
@@ -490,6 +555,8 @@ export function createDbOperations(database: Database.Database): DbOperations {
           entry.area ?? null,
           entry.signature
         );
+
+      return { isRepeat: false, correctionCount: 1, needsConfirmation: false };
     },
 
     listLearnings(
@@ -530,6 +597,42 @@ export function createDbOperations(database: Database.Database): DbOperations {
         )
         .run(status, promotedTo ?? null, entryId);
       return result.changes > 0;
+    },
+
+    deleteLearning(userAddress: string, entryId: string): boolean {
+      const result = database
+        .prepare("DELETE FROM learnings WHERE user_address = ? AND entry_id = ?")
+        .run(userAddress.toLowerCase(), entryId);
+      return result.changes > 0;
+    },
+
+    getLearningStats(userAddress: string): {
+      total: number;
+      confirmed: number;
+      pending: number;
+      byType: Record<string, number>;
+    } {
+      const rows = database
+        .prepare("SELECT entry_type, status FROM learnings WHERE user_address = ?")
+        .all(userAddress.toLowerCase()) as Array<{ entry_type: string; status: string }>;
+
+      const stats = {
+        total: rows.length,
+        confirmed: 0,
+        pending: 0,
+        byType: {} as Record<string, number>,
+      };
+
+      for (const row of rows) {
+        if (row.status === "confirmed" || row.status === "promoted") {
+          stats.confirmed++;
+        } else if (row.status === "pending") {
+          stats.pending++;
+        }
+        stats.byType[row.entry_type] = (stats.byType[row.entry_type] ?? 0) + 1;
+      }
+
+      return stats;
     },
 
     saveWorkspaceFile(
@@ -670,6 +773,8 @@ export const createLearning = ops.createLearning;
 export const listLearnings = ops.listLearnings;
 export const searchLearnings = ops.searchLearnings;
 export const updateLearningStatus = ops.updateLearningStatus;
+export const deleteLearning = ops.deleteLearning;
+export const getLearningStats = ops.getLearningStats;
 export const saveWorkspaceFile = ops.saveWorkspaceFile;
 export const getWorkspaceFile = ops.getWorkspaceFile;
 export const listWorkspaceFiles = ops.listWorkspaceFiles;

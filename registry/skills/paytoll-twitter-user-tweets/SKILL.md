@@ -4,7 +4,7 @@ description: >
   Get a user's recent tweets by user ID. Can exclude replies and retweets.
   Costs $0.08 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Twitter User Tweets
 
-Get user's recent tweets via PayToll.
+Get a user's recent tweets by user ID via [[x402-payments]]. Can filter out replies and retweets.
+
+First get the user ID with [[paytoll-twitter-user-lookup]], then fetch their tweets. Use [[paytoll-twitter-tweet-lookup]] for detailed metrics on specific tweets.
+
+Part of the [[social]] domain.
 
 ## Parameters
 

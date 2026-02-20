@@ -11,7 +11,7 @@ import { Shield, Cpu, Lock, LogOut } from "lucide-react";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
 
-const SESSION_KEY = "skillseal-session";
+const SESSION_KEY = "skillsseal-session";
 
 export default function Home() {
   const [view, setView] = useState<View>("loading");
@@ -101,7 +101,7 @@ export default function Home() {
         <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-2">
             <SealLogo size={32} />
-            <span className="text-lg font-bold tracking-tight">SkillSeal</span>
+            <span className="text-lg font-bold tracking-tight">SkillsSeal</span>
           </div>
 
           {address && (
@@ -134,14 +134,14 @@ export default function Home() {
             <div className="text-center space-y-6 max-w-3xl">
               <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
                 <Shield className="mr-2 h-4 w-4" />
-                Self-Sovereign AI on EigenLayer
+                AI Agents in Hardware-Isolated TEEs
               </div>
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl bg-gradient-to-r from-blue-600 via-blue-500 to-pink-500 bg-clip-text text-transparent">
-                Build an army of money-making agents that verify
+                Your agent. Your wallet. Your keys.
               </h1>
               <p className="mx-auto max-w-2xl text-lg text-muted-foreground md:text-xl">
-                Deploy self-sovereign AI agents that earn, trade, and execute — all inside a Trusted
-                Execution Environment. Cryptographically verified. Tamper-proof. Yours.
+                Deploy AI agents that hold their own wallets inside Trusted Execution Environments.
+                The platform never sees your keys. The agent signs every action.
               </p>
             </div>
 
@@ -152,18 +152,18 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-8 pt-12 text-left md:grid-cols-3 max-w-5xl w-full">
               <Feature
                 icon={Shield}
-                title="Sealed Wallets"
-                description="Every agent gets its own wallet inside the TEE. Only your agent holds the keys — not us, not anyone."
+                title="TEE-Isolated Wallets"
+                description="Each agent derives its own wallet inside a hardware-isolated TEE. The private key exists only in protected memory."
               />
               <Feature
                 icon={Cpu}
-                title="Seal of Verification"
-                description="Every action is signed and verified on-chain. Full audit trail. Zero trust required."
+                title="Signed Actions"
+                description="Every task execution is cryptographically signed by the agent's wallet. You can verify any action came from your agent."
               />
               <Feature
                 icon={Lock}
-                title="Sealed Secrets"
-                description="Secrets are encrypted with KMS and only decrypted inside the TEE. Not even the platform can read them."
+                title="Encrypted Secrets"
+                description="API keys and credentials are KMS-encrypted at rest. They're decrypted only inside the TEE at runtime."
               />
             </div>
           </div>

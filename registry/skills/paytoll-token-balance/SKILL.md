@@ -4,7 +4,7 @@ description: >
   Check wallet token balance on any supported chain including Ethereum, Base,
   Polygon, Arbitrum, Optimism, BSC, and Avalanche. Costs $0.005 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Token Balance
 
-Check wallet token balance on any supported chain.
+Check wallet token balance on any supported chain via [[x402-payments]]. Supports native tokens and ERC20s.
+
+Use before [[paytoll-aave-supply]] or [[paytoll-swap-build]] to verify available funds. Combine with [[paytoll-wallet-validator]] to verify addresses first.
+
+Part of the [[defi]] domain. See also [[identity]] for wallet-related operations.
 
 ## Parameters
 

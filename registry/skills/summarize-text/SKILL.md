@@ -5,7 +5,7 @@ description: >
   Works with articles, documents, meeting notes, or any lengthy content.
   No external API required — uses simple extractive summarization.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: python3 scripts/summarize.py {{input}}
@@ -15,7 +15,9 @@ dependencies:
 
 # Summarize Text
 
-This skill takes long text and produces a concise summary.
+Summarizes long text into concise bullet points or a short paragraph. Part of [[text-tools]] — runs locally without [[x402-payments]].
+
+For more complex analysis or custom summary styles, use [[ai]] skills instead. See also [[humanize-ai-text]] and [[translate-text]].
 
 ## Usage
 

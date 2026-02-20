@@ -1,5 +1,5 @@
 {
-  "name": "eigenskills-agent",
+  "name": "skillsseal-agent",
   "version": "0.1.0",
   "description": "Verifiable AI agent for EigenCompute TEE",
   "type": "module",

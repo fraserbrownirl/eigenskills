@@ -45,7 +45,7 @@ export function initTelegramBot(): void {
     if (!linkCode) {
       bot!.sendMessage(
         chatId,
-        "Welcome to EigenSkills! Use a link code from the web app to connect your agent.\n\nUsage: /start <link-code>"
+        "Welcome to SkillsSeal! Use a link code from the web app to connect your agent.\n\nUsage: /start <link-code>"
       );
       return;
     }

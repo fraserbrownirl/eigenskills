@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SkillSeal",
-  description: "Build an army of self-sovereign money-making agents that verify",
+  title: "SkillsSeal",
+  description:
+    "Deploy AI agents with their own wallets inside hardware-isolated TEEs. Your keys, your agent.",
 };
 
 export default function RootLayout({

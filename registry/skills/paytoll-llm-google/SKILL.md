@@ -4,7 +4,7 @@ description: >
   Google Gemini chat completions proxy. Access Gemini 2.0 Flash and Flash
   Lite models via pay-per-call. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # LLM Google
 
-Google Gemini chat proxy via PayToll.
+Access Google Gemini models via [[x402-payments]] without managing API keys. Best for multimodal tasks, broad knowledge, and fast responses.
+
+For simpler text tasks, [[text-tools]] may be more cost-effective. For alternative models, see [[paytoll-llm-anthropic]] or [[paytoll-llm-openai]].
+
+Part of the [[ai]] domain.
 
 ## Parameters
 

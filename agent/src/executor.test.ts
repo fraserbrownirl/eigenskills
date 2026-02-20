@@ -4,7 +4,10 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { executeSkill } from "./executor.js";
 
-const TEST_DIR = join(tmpdir(), `executor-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const TEST_DIR = join(
+  tmpdir(),
+  `executor-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
 const SKILLS_DIR = join(TEST_DIR, "skills");
 
 beforeEach(() => {
@@ -12,7 +15,7 @@ beforeEach(() => {
   // Set local registry path so executor doesn't try to clone from git
   vi.stubEnv("SKILL_REGISTRY_LOCAL", SKILLS_DIR);
   // Clear the skills cache before each test
-  const cacheDir = "/tmp/eigenskills";
+  const cacheDir = "/tmp/skillsseal";
   if (existsSync(cacheDir)) {
     rmSync(cacheDir, { recursive: true, force: true });
   }

@@ -1,4 +1,4 @@
-# EigenSkills
+# SkillsSeal
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue.svg)](https://www.typescriptlang.org/)
@@ -59,7 +59,7 @@ Edit `backend/.env`:
 
 ```bash
 EIGENCOMPUTE_PRIVATE_KEY=your_ecloud_wallet_private_key
-AGENT_IMAGE_REF=your_dockerhub_username/eigenskills-agent:latest
+AGENT_IMAGE_REF=your_dockerhub_username/skillsseal-agent:latest
 EIGENCOMPUTE_ENVIRONMENT=sepolia
 ```
 
@@ -67,8 +67,8 @@ EIGENCOMPUTE_ENVIRONMENT=sepolia
 
 ```bash
 cd agent
-docker build --platform linux/amd64 -t YOUR_USERNAME/eigenskills-agent:latest .
-docker push YOUR_USERNAME/eigenskills-agent:latest
+docker build --platform linux/amd64 -t YOUR_USERNAME/skillsseal-agent:latest .
+docker push YOUR_USERNAME/skillsseal-agent:latest
 ```
 
 ### 4. Run Development Servers
@@ -86,7 +86,7 @@ Open http://localhost:3000 and connect your wallet to deploy an agent.
 ## Project Structure
 
 ```
-eigenskills-v2/
+skillsseal/
 ├── agent/          # Agent container (deployed to TEE)
 ├── backend/        # Orchestration API (Express)
 ├── frontend/       # Web dashboard (Next.js)

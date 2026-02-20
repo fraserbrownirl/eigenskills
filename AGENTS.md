@@ -1,10 +1,10 @@
-# EigenSkills — Agent Context
+# SkillsSeal — Agent Context
 
 This file provides AI agents with a complete map of the codebase. Read this before exploring.
 
 ## Architecture Overview
 
-EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users connect an Ethereum wallet, configure API keys, and deploy a personal AI agent into a Trusted Execution Environment (TEE). The agent routes tasks to skills from a curated GitHub registry using EigenAI, and every action is cryptographically signed.
+SkillsSeal is a verifiable agent platform on EigenLayer's EigenCompute. Users connect an Ethereum wallet, configure API keys, and deploy a personal AI agent into a Trusted Execution Environment (TEE). The agent routes tasks to skills from a curated GitHub registry using EigenAI, and every action is cryptographically signed.
 
 **Three components:**
 1. **Agent** (`agent/`) — Docker container deployed per-user into TEE
@@ -21,7 +21,8 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 |------|---------|-------------|
 | `src/index.ts` | Express HTTP server, 5 endpoints | App startup, route handlers |
 | `src/wallet.ts` | TEE wallet via viem `mnemonicToAccount` | `getAgentAddress()`, `signMessage()` |
-| `src/router.ts` | EigenAI skill routing with tool calling | `routeTask()`, `checkGrantStatus()` |
+| `src/router.ts` | EigenAI skill routing with tool calling + graph traversal | `routeTask()`, `agentLoop()`, `checkGrantStatus()` |
+| `src/graph.ts` | Skill graph fetching and wikilink extraction | `fetchGraphNode()`, `fetchGraphIndex()`, `resolveWikilinks()` |
 | `src/registry.ts` | Fetches/caches registry.json from GitHub | `listSkills()`, `getSkill()`, `fetchRegistry()` |
 | `src/executor.ts` | Sandboxed skill execution | `executeSkill()` |
 | `src/logger.ts` | Signed execution log (in-memory, 1000 cap) | `log()`, `getHistory()` |
@@ -55,8 +56,37 @@ EigenSkills is a verifiable agent platform on EigenLayer's EigenCompute. Users c
 |------|---------|
 | `registry.json` | Auto-generated skill index (id, name, contentHash, requiresEnv) |
 | `scripts/generate-registry.py` | Validates SKILL.md, computes hashes, writes registry.json |
+| `scripts/validate-graph.py` | Validates skill graph wikilinks, reachability, orphan detection |
 | `skills/*/SKILL.md` | Skill manifest (YAML frontmatter: name, description, requires_env, execution) |
+| `graph/*.md` | Skill graph nodes (index, MOCs, concept files with wikilinks) |
 | `.github/workflows/update-registry.yml` | GitHub Action to regenerate registry.json on push |
+
+### Skill Graph (`registry/graph/`)
+
+The skill graph enables progressive disclosure for complex task routing. Instead of dumping all 34 skill descriptions into the system prompt, the agent navigates a knowledge graph via the `explore_skills` tool.
+
+| File | Purpose |
+|------|---------|
+| `index.md` | Entry point — lists all domains and skill IDs, injected into system prompt |
+| `defi.md` | DeFi domain MOC — Aave lending, DEX swaps, pools, token data |
+| `social.md` | Social domain MOC — Twitter operations |
+| `ai.md` | AI domain MOC — LLM access (Anthropic, Google, OpenAI) |
+| `identity.md` | Identity domain MOC — ENS, wallet validation |
+| `text-tools.md` | Text tools MOC — summarize, translate, humanize |
+| `aave-lending.md` | Sub-MOC — Full Aave V3 lending lifecycle |
+| `dex-trading.md` | Sub-MOC — Quote-then-swap flow, pool discovery |
+| `ens-management.md` | Sub-MOC — ENS commit-reveal registration lifecycle |
+| `x402-payments.md` | Concept node — How PayToll x402 micropayments work |
+
+**Graph Structure:**
+- Every node has YAML frontmatter with `id`, `description`, `skills[]`, `links[]`
+- Body text contains `[[wikilinks]]` woven into prose explaining *when and why* to follow paths
+- SKILL.md files also have wikilinks connecting related skills and concepts
+
+**Agent Integration:**
+- `agent/src/graph.ts` — `fetchGraphNode()`, `fetchGraphIndex()`, caching
+- `agent/src/router.ts` — `explore_skills` tool definition, handles graph traversal in agentic loop
+- System prompt injects `index.md` content instead of flat skill list
 
 ## API Contracts
 
@@ -111,14 +141,16 @@ Frontend                    Backend                     Agent (TEE)
 - Verifiable build toggle in frontend — user chooses on-chain attestation
 - 4-step agent setup wizard with verifiable build option
 - Dashboard with status, controls, task submission
-- Skill registry with 3 skills + GitHub Action CI
+- Skill registry with 34 skills (3 original + 31 PayToll API skills) + GitHub Action CI
+- **Skill graph system** — traversable knowledge graph with MOCs, wikilinks, `explore_skills` tool
+- Skills panel with domain-based grouping (DeFi, Social, AI, Identity, Text Tools)
 
 ### Missing / Incomplete
 - No tests (zero coverage)
 - Client-generated SIWE nonce (should be server-issued)
 - No session persistence (state lost on page refresh)
 - No "Update Env Vars" UI (API exists, no frontend)
-- No skills list or execution history views in Dashboard
+- No execution history view in Dashboard
 - SQLite database (not production-ready)
 - Content hash verification not implemented (registry has hashes, executor doesn't verify)
 - WalletConnect installed but unused (MetaMask only)
@@ -136,12 +168,72 @@ Frontend                    Backend                     Agent (TEE)
 | Add a new backend API route | `backend/src/index.ts` — add route handler, update `requireAuth` if needed |
 | Add a new agent endpoint | `agent/src/index.ts` — add Express route |
 | Change auth logic | `backend/src/auth.ts` (SIWE verify, token create/verify) |
-| Add a new skill | `registry/skills/{name}/SKILL.md` + scripts, push to trigger GitHub Action |
+| Add a new skill | See "Adding Skills" section below |
 | Change skill execution | `agent/src/executor.ts` — `executeSkill()` function |
 | Change EigenAI routing | `agent/src/router.ts` — tool definitions, prompt, response parsing |
 | Add frontend component | `frontend/src/components/`, import in `page.tsx` |
 | Add API client method | `frontend/src/lib/api.ts` |
 | Change database schema | `backend/src/db.ts` — add migration in `initDb()` |
+
+## Adding Skills
+
+### 1. Create Skill Files
+
+```
+registry/skills/{skill-name}/
+├── SKILL.md     # Manifest with YAML frontmatter
+└── run.js       # Execution script (or run.py, run.sh)
+```
+
+**SKILL.md structure:**
+```markdown
+---
+name: skill-name
+description: >
+  One-sentence description of what this skill does.
+version: 1.0.0
+author: skillsseal
+requires_env: [API_KEY_NAME]   # Or [] if no keys needed
+execution:
+  - run: node run.js {{input}}
+---
+
+# Skill Title
+
+Prose description with [[wikilinks]] to related skills and concepts.
+Link to domain MOC: [[defi]] or [[social]] or [[ai]] or [[identity]] or [[text-tools]].
+Link to related skills: [[other-skill-name]].
+```
+
+### 2. Update Skill Graph
+
+1. **Add skill to relevant MOC** — edit `registry/graph/{domain}.md`:
+   - Add skill ID to `skills:` array in frontmatter
+   - Add `[[skill-name]]` wikilink in prose where contextually relevant
+
+2. **If new sub-domain** — create sub-MOC (e.g., `registry/graph/new-topic.md`):
+   - Frontmatter: `id`, `description`, `skills[]`, `links[]`
+   - Body: prose with `[[wikilinks]]` explaining relationships
+   - Link from parent MOC
+
+### 3. Validate and Generate
+
+```bash
+cd registry
+python scripts/validate-graph.py    # Check wikilinks, reachability
+python scripts/generate-registry.py # Regenerate registry.json
+```
+
+### 4. TEE Compatibility Checklist
+
+| Requirement | Check |
+|-------------|-------|
+| No local filesystem access | TEE storage is ephemeral |
+| No OAuth browser flows | Headless container, no UI |
+| No self-modification | Breaks TEE attestation |
+| No LAN/local network | Cloud-hosted, isolated |
+| Minimal dependencies | Container size matters |
+| API keys via env vars | KMS-encrypted in TEE |
 
 ## Known Gotchas
 
@@ -229,7 +321,7 @@ See `docs/eigencompute-reference.md` for detailed documentation.
 ## Reference Docs
 
 For deeper details, read these in `docs/`:
-- `eigenskills-build-plan.md` — Full architecture, component design, build phases
+- `eigenskills-build-plan.md` — Full architecture, component design, build phases (legacy filename)
 - `eigenai-reference.md` — EigenAI API, grant auth flow, signature verification
 - `eigencompute-reference.md` — Dockerfile requirements, CLI commands, env vars
 - `README.md` — Setup instructions, troubleshooting

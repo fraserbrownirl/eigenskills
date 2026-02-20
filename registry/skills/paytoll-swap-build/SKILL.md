@@ -4,7 +4,7 @@ description: >
   Build a DEX swap transaction for signing via Li.Fi aggregator. Returns
   ready-to-sign transaction data. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Swap Build
 
-Build DEX swap transaction via Li.Fi.
+Build a DEX swap transaction for signing via Li.Fi aggregator. Returns ready-to-sign transaction data. Uses [[x402-payments]].
+
+This is step 2 of the [[dex-trading]] flow. Always use [[paytoll-swap-quote]] first to verify the expected output and price impact.
+
+Use swaps after [[aave-lending]] yield optimization to move assets to the best chain.
 
 ## Parameters
 

@@ -1,7 +1,7 @@
 {
-  "name": "eigenskills-backend",
+  "name": "skillsseal-backend",
   "version": "0.1.0",
-  "description": "Orchestration backend for EigenSkills platform",
+  "description": "Orchestration backend for the SkillsSeal platform",
   "type": "module",
   "scripts": {
     "build": "tsc",

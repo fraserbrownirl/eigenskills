@@ -4,7 +4,7 @@ description: >
   OpenAI chat completions proxy. Access GPT-4o mini and GPT-3.5 Turbo
   models via pay-per-call. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # LLM OpenAI
 
-OpenAI GPT chat proxy via PayToll.
+Access OpenAI GPT models via [[x402-payments]] without managing API keys. Best for creative writing, broad capabilities, and function calling.
+
+For simpler text tasks, [[text-tools]] may be more cost-effective. For alternative models, see [[paytoll-llm-anthropic]] or [[paytoll-llm-google]].
+
+Part of the [[ai]] domain.
 
 ## Parameters
 

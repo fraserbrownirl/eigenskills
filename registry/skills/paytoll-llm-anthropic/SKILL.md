@@ -4,7 +4,7 @@ description: >
   Anthropic Claude chat completions proxy. Access Claude 3.5 Haiku and Claude
   3 Haiku models via pay-per-call. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # LLM Anthropic
 
-Anthropic Claude chat proxy via PayToll.
+Access Anthropic Claude models via [[x402-payments]] without managing API keys. Best for complex reasoning, code generation, and nuanced analysis.
+
+For simpler text tasks, [[text-tools]] may be more cost-effective. For alternative models, see [[paytoll-llm-google]] or [[paytoll-llm-openai]].
+
+Part of the [[ai]] domain.
 
 ## Parameters
 

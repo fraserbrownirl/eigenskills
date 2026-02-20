@@ -6,12 +6,12 @@ import { randomUUID } from "crypto";
 
 const EIGENCOMPUTE_PRIVATE_KEY = process.env.EIGENCOMPUTE_PRIVATE_KEY ?? "";
 const EIGENCOMPUTE_ENVIRONMENT = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
-const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "eigenskills/agent:latest";
+const AGENT_IMAGE_REF = process.env.AGENT_IMAGE_REF ?? "skillsseal/agent:latest";
 
 // GitHub Actions deployment
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER ?? "fraserbrownirl";
-const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME ?? "eigenskills-v2";
+const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME ?? "skillsseal";
 const BACKEND_WEBHOOK_URL = process.env.BACKEND_WEBHOOK_URL ?? "";
 
 // Legacy: DEPLOY_STRATEGY is no longer used — CLI is the only path.
@@ -116,7 +116,7 @@ function buildEnvFile(envVars: EnvVar[]): string {
     lines.push(`${envKey}=${escapeEnvValue(value)}`);
   }
 
-  const secureDir = mkdtempSync(join(tmpdir(), "eigenskills-"));
+  const secureDir = mkdtempSync(join(tmpdir(), "skillsseal-"));
   chmodSync(secureDir, DIR_PERMS);
   const filepath = join(secureDir, "env");
   writeFileSync(filepath, lines.join("\n") + "\n", { mode: FILE_PERMS });

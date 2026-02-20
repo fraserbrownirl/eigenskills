@@ -1,5 +1,6 @@
 import type { Skill } from "./registry.js";
 import { getAgentAddress, signMessage } from "./wallet.js";
+import { fetchGraphIndex, fetchGraphNode } from "./graph.js";
 
 const GRANT_API = process.env.EIGENAI_GRANT_API ?? "https://determinal-api.eigenarcade.com";
 const MODEL = "gpt-oss-120b-f16";
@@ -14,10 +15,30 @@ const DEFAULT_SOUL = `You are a verifiable AI agent running inside an EigenCompu
 - Have opinions — you're allowed to disagree
 
 ## Self-Improvement
-- When you discover something non-obvious, log it
-- When you make a mistake or get corrected, log it
+- When you discover something non-obvious, log it with log_learning
+- When you make a mistake or get corrected, log it with log_error
 - When a command fails, log the error and the fix
-- Review past learnings before major tasks`;
+- Review past learnings before major tasks using search_learnings
+
+## Citation Rule
+When using information from memory_search or search_learnings, cite the source:
+- "Using your preference for X (from memory)"
+- "Based on learning LRN-abc123..."
+This builds trust and lets the user correct misapplied patterns.
+
+## Security Boundaries — Never Store
+- Credentials (passwords, API keys, tokens, SSH keys)
+- Financial data (card numbers, bank accounts, crypto seeds)
+- Medical information (diagnoses, medications, conditions)
+- Biometric patterns or behavioral fingerprints
+- Third-party personal information (no consent obtained)
+- Location patterns (home/work addresses, routines)
+
+## Security Boundaries — Store with Caution
+- Work context: only while project is active
+- Emotional states: only if user explicitly shares
+- Relationships: roles only ("manager", "client"), no personal details
+- Schedules: general patterns OK, not specific times`;
 
 // Extensible context sections injected into every system prompt.
 // Later phases append workspace files (TOOLS.md, AGENTS.md) and pending learnings.
@@ -28,10 +49,9 @@ export function registerContextProvider(fn: () => string): void {
   dynamicContextProviders.push(fn);
 }
 
-/** Assemble the full system prompt from SOUL + skill list + dynamic context. */
-export function buildSystemPrompt(availableSkills: Skill[]): string {
+/** Assemble the full system prompt from SOUL + graph index + dynamic context. */
+export function buildSystemPrompt(availableSkills: Skill[], graphIndex?: string): string {
   const soul = process.env.AGENT_SOUL ?? DEFAULT_SOUL;
-  const skillList = availableSkills.map((s) => `- ${s.id}: ${s.description}`).join("\n");
 
   const sections = [soul];
 
@@ -40,9 +60,16 @@ export function buildSystemPrompt(availableSkills: Skill[]): string {
     if (ctx) sections.push(ctx);
   }
 
-  sections.push(
-    `Use the select_skills tool to choose which skill(s) to execute.\n\nAvailable skills:\n${skillList}`
-  );
+  if (graphIndex) {
+    sections.push(
+      `## Skill Graph\n\n${graphIndex}\n\nUse explore_skills to discover capabilities before selecting skills.\nUse select_skills to execute skills once you know which ones to use.`
+    );
+  } else {
+    const skillList = availableSkills.map((s) => `- ${s.id}: ${s.description}`).join("\n");
+    sections.push(
+      `Use the select_skills tool to choose which skill(s) to execute.\n\nAvailable skills:\n${skillList}`
+    );
+  }
 
   return sections.join("\n\n");
 }
@@ -260,12 +287,40 @@ const SELECT_SKILLS_TOOL = {
   },
 };
 
+const EXPLORE_SKILLS_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "explore_skills",
+    description:
+      "Read a node in the skill graph to discover capabilities, " +
+      "related skills, and domain knowledge. Follow [[wikilinks]] " +
+      "to explore deeper. Use before select_skills for complex tasks.",
+    parameters: {
+      type: "object",
+      properties: {
+        node_id: {
+          type: "string",
+          description: "Graph node to read (e.g. 'defi', 'aave-lending', 'social')",
+        },
+      },
+      required: ["node_id"],
+    },
+  },
+};
+
 // ── Multi-turn agentic loop ────────────────────────────────────────────────
+
+export interface PatternUsed {
+  source: "memory" | "learning";
+  key: string;
+  summary: string;
+}
 
 export interface AgentLoopResult {
   response: string;
   skillIds: string[];
   signature: string;
+  patternsUsed: PatternUsed[];
 }
 
 /**
@@ -283,7 +338,8 @@ export async function agentLoop(
   allTools: unknown[],
   executeTool: ToolExecutor
 ): Promise<AgentLoopResult> {
-  const systemPrompt = buildSystemPrompt(availableSkills);
+  const graphIndex = await fetchGraphIndex();
+  const systemPrompt = buildSystemPrompt(availableSkills, graphIndex);
   const validSkillIds = new Set(availableSkills.map((s) => s.id));
 
   const messages: ChatMessage[] = [
@@ -291,9 +347,10 @@ export async function agentLoop(
     ...conversationHistory.filter((m) => m.role !== "system"),
   ];
 
-  const tools = [SELECT_SKILLS_TOOL, ...allTools];
+  const tools = [SELECT_SKILLS_TOOL, EXPLORE_SKILLS_TOOL, ...allTools];
   let lastSignature = "";
   const selectedSkillIds: string[] = [];
+  const patternsUsed: PatternUsed[] = [];
 
   for (let turn = 0; turn < MAX_LOOP_TURNS; turn++) {
     const data = await callEigenAI(messages, tools);
@@ -310,6 +367,7 @@ export async function agentLoop(
         response: content ?? "",
         skillIds: selectedSkillIds,
         signature: lastSignature,
+        patternsUsed,
       };
     }
 
@@ -322,7 +380,7 @@ export async function agentLoop(
 
     // Process each tool call
     for (const tc of toolCalls) {
-      let args: Record<string, unknown> = {};
+      let args: Record<string, unknown>;
       try {
         args = JSON.parse(tc.function.arguments);
       } catch {
@@ -332,14 +390,37 @@ export async function agentLoop(
       let result: string;
 
       if (tc.function.name === "select_skills") {
-        const ids = (args.skill_ids as string[] ?? []).filter((id) => validSkillIds.has(id));
+        const ids = ((args.skill_ids as string[]) ?? []).filter((id) => validSkillIds.has(id));
         selectedSkillIds.push(...ids);
-        result = ids.length > 0
-          ? `Selected skills: ${ids.join(", ")}`
-          : "No valid skills matched.";
+        result = ids.length > 0 ? `Selected skills: ${ids.join(", ")}` : "No valid skills matched.";
+      } else if (tc.function.name === "explore_skills") {
+        const nodeId = args.node_id as string;
+        const nodeContent = await fetchGraphNode(nodeId);
+        result = nodeContent ?? `Graph node "${nodeId}" not found.`;
       } else {
         const toolResult = await executeTool(tc.function.name, args);
         result = toolResult ?? `Unknown tool: ${tc.function.name}`;
+
+        // Track patterns used from memory/learnings tools
+        if (tc.function.name === "memory_search" && result && !result.includes("No matching")) {
+          const query = args.query as string;
+          patternsUsed.push({
+            source: "memory",
+            key: query,
+            summary: result.slice(0, 100) + (result.length > 100 ? "..." : ""),
+          });
+        } else if (
+          tc.function.name === "search_learnings" &&
+          result &&
+          !result.includes("No matching")
+        ) {
+          const query = args.query as string;
+          patternsUsed.push({
+            source: "learning",
+            key: query,
+            summary: result.slice(0, 100) + (result.length > 100 ? "..." : ""),
+          });
+        }
       }
 
       messages.push({
@@ -356,6 +437,7 @@ export async function agentLoop(
     response: "Reached maximum conversation turns.",
     skillIds: selectedSkillIds,
     signature: lastSignature,
+    patternsUsed,
   };
 }
 
@@ -366,12 +448,10 @@ export interface RoutingResult {
   signature: string;
   requestMessages: Array<{ role: string; content: string }>;
   responseChoices: Array<{ message: { role: string; content: string | null } }>;
+  patternsUsed: PatternUsed[];
 }
 
-export async function routeTask(
-  task: string,
-  availableSkills: Skill[]
-): Promise<RoutingResult> {
+export async function routeTask(task: string, availableSkills: Skill[]): Promise<RoutingResult> {
   const result = await agentLoop(
     [{ role: "user", content: task }],
     availableSkills,
@@ -384,5 +464,6 @@ export async function routeTask(
     signature: result.signature,
     requestMessages: [{ role: "user", content: task }],
     responseChoices: [{ message: { role: "assistant", content: result.response } }],
+    patternsUsed: result.patternsUsed,
   };
 }

@@ -124,7 +124,7 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
       <CardHeader className="text-center">
         <CardTitle>Connect Wallet</CardTitle>
         <CardDescription>
-          Connect your wallet to deploy and command your SkillSeal agents
+          Connect your wallet to deploy and command your SkillsSeal agents
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

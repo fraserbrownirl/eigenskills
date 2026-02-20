@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { submitTask, type TaskResult } from "@/lib/api";
-import { Loader2, Send, CheckCircle2, Cpu, ShieldCheck, AlertTriangle } from "lucide-react";
+import { Loader2, Send, CheckCircle2, Cpu, ShieldCheck, AlertTriangle, Brain } from "lucide-react";
 
 interface TaskInterfaceProps {
   token: string;
@@ -128,6 +128,35 @@ export function TaskInterface({
                       >
                         {skill}
                       </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.patternsUsed && result.patternsUsed.length > 0 && (
+                <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Brain className="h-4 w-4 text-blue-400" />
+                    <span className="text-xs font-medium text-blue-400 uppercase tracking-wider">
+                      Patterns Used
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {result.patternsUsed.map((pattern, idx) => (
+                      <div
+                        key={idx}
+                        className="rounded border border-blue-500/20 bg-blue-500/5 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-400 uppercase">
+                            {pattern.source}
+                          </span>
+                          <span className="text-xs text-muted-foreground">{pattern.key}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-foreground/70 line-clamp-2">
+                          {pattern.summary}
+                        </p>
+                      </div>
                     ))}
                   </div>
                 </div>

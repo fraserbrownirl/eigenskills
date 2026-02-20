@@ -1,6 +1,7 @@
 export * from "./AgentStatusCard";
 export * from "./ContainerLogs";
 export * from "./ExecutionHistory";
+export * from "./MemoryPanel";
 export * from "./MessagingPanel";
 export * from "./SecretsPanel";
 export * from "./SettingsPanel";

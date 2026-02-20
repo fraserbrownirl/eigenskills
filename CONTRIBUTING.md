@@ -1,6 +1,6 @@
-# Contributing to EigenSkills
+# Contributing to SkillsSeal
 
-Thank you for your interest in contributing to EigenSkills! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to SkillsSeal! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 

@@ -4,7 +4,7 @@ description: >
   Search recent tweets (last 7 days) on X/Twitter. Supports advanced query
   syntax. Costs $0.08 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Twitter Search
 
-Search recent tweets via PayToll.
+Search recent tweets (last 7 days) on X/Twitter via [[x402-payments]]. Supports advanced query syntax for filtering.
+
+Use with [[paytoll-twitter-user-lookup]] to research authors of interesting tweets, or [[paytoll-twitter-tweet-lookup]] to get more details on specific tweets.
+
+Part of the [[social]] domain.
 
 ## Parameters
 

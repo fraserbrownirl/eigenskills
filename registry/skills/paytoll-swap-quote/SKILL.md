@@ -4,7 +4,7 @@ description: >
   Get a DEX swap price quote across chains via Li.Fi aggregator. Supports
   same-chain and cross-chain swaps. Costs $0.005 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Swap Quote
 
-Get DEX swap quote via Li.Fi.
+Get a DEX swap price quote via Li.Fi aggregator, supporting same-chain and cross-chain swaps. Uses [[x402-payments]].
+
+This is step 1 of the [[dex-trading]] flow. Always quote before swapping — it shows expected output, price impact, and optimal routing. Once you approve, use [[paytoll-swap-build]] to create the transaction.
+
+Use [[paytoll-search-pools]] or [[paytoll-trending-pools]] to discover trading opportunities first.
 
 ## Parameters
 

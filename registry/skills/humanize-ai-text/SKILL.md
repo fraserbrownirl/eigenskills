@@ -5,7 +5,7 @@ description: >
   and human-written. Useful for editing drafts, improving readability, and
   reducing robotic tone in AI-assisted writing.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: python3 scripts/transform.py {{input}}
@@ -15,7 +15,9 @@ dependencies:
 
 # Humanize AI Text
 
-This skill takes AI-generated text and rewrites it to sound more natural.
+Detects AI-generated text patterns and rewrites content to sound more natural. Part of [[text-tools]] — runs locally without [[x402-payments]].
+
+Use after [[ai]] skills to polish generated content. See also [[summarize-text]] and [[translate-text]] for other text processing.
 
 ## Usage
 

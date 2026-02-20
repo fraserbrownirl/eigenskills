@@ -4,7 +4,7 @@ description: >
   Post a tweet using your OAuth access token. Supports replies and quote
   tweets. Costs $0.015 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Twitter Post
 
-Post a tweet via PayToll.
+Post a tweet using your OAuth access token via [[x402-payments]]. Supports replies and quote tweets.
+
+Compose content with [[ai]] skills first for better results. Use [[paytoll-twitter-tweet-lookup]] to verify posts were created.
+
+Part of the [[social]] domain.
 
 ## Parameters
 

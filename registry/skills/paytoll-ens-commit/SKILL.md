@@ -4,7 +4,7 @@ description: >
   Build a commit transaction for ENS name registration (step 1 of 2-step
   registration process). Free endpoint - no x402 payment required.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # ENS Commit
 
-Build commit transaction for ENS registration (step 1 of 2).
+Build a commit transaction for ENS registration — step 1 of the 2-step [[ens-management]] process.
+
+First use [[paytoll-ens-check]] to verify availability. After this commit transaction confirms, wait at least 1 minute before calling [[paytoll-ens-register]] (step 2).
+
+Part of the [[identity]] domain. Free endpoint — no [[x402-payments]] required.
 
 ## Parameters
 

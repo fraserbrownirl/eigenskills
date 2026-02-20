@@ -4,7 +4,7 @@ description: >
   Build an Aave V3 repay transaction. Returns ready-to-sign transaction
   data. Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Aave Repay
 
-Build Aave V3 repay transaction.
+Build Aave V3 repay transactions via [[x402-payments]]. Pay back assets borrowed with [[paytoll-aave-borrow]].
+
+Repaying improves your [[paytoll-aave-health-factor]] and frees up collateral for [[paytoll-aave-withdraw]].
+
+See [[aave-lending]] for the full lending lifecycle.
 
 ## Parameters
 

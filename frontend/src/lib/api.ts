@@ -18,9 +18,16 @@ export interface AgentInfo {
   healthy: boolean;
 }
 
+export interface PatternUsed {
+  source: "memory" | "learning";
+  key: string;
+  summary: string;
+}
+
 export interface TaskResult {
   result: string;
   skillsUsed: string[];
+  patternsUsed?: PatternUsed[];
   routingSignature: string;
   agentSignature: string;
   agentAddress: string;
@@ -335,5 +342,75 @@ export async function unlinkTelegram(token: string): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? "Failed to unlink Telegram");
+  }
+}
+
+// ── Learnings API ─────────────────────────────────────────────────────────────
+
+export interface LearningEntry {
+  entryId: string;
+  entryType: "LRN" | "ERR" | "FEAT";
+  category?: string;
+  summary: string;
+  content: string;
+  priority?: string;
+  status: string;
+  createdAt: string;
+}
+
+export async function getLearnings(
+  token: string,
+  filters?: { status?: string; type?: string }
+): Promise<LearningEntry[]> {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.type) params.set("type", filters.type);
+
+  const url = params.toString()
+    ? `${BACKEND_URL}/api/agents/learnings?${params}`
+    : `${BACKEND_URL}/api/agents/learnings`;
+
+  const res = await fetch(url, { headers: getHeaders(token) });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries ?? [];
+}
+
+export async function deleteLearning(token: string, entryId: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/learnings/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to delete learning");
+  }
+}
+
+// ── Memory API ────────────────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  key: string;
+  content: string;
+  updatedAt: string;
+}
+
+export async function getMemory(token: string): Promise<MemoryEntry[]> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/memory`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries ?? [];
+}
+
+export async function deleteMemory(token: string, key: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/memory?key=${encodeURIComponent(key)}`, {
+    method: "DELETE",
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to delete memory");
   }
 }

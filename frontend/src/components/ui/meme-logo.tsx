@@ -6,7 +6,7 @@ export function SealLogo({ className, size = 36 }: { className?: string; size?: 
     <div className={cn("relative flex shrink-0 items-center justify-center", className)}>
       <Image
         src="/images/skillseal_logo.png"
-        alt="SkillSeal"
+        alt="SkillsSeal"
         width={size}
         height={size}
         className="object-contain"

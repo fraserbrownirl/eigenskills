@@ -53,6 +53,12 @@ function generateEntryId(type: string): string {
   return `${type}-${ts}-${rand}`;
 }
 
+interface CreateLearningResult {
+  isRepeat: boolean;
+  correctionCount: number;
+  needsConfirmation: boolean;
+}
+
 async function createLearning(
   entryType: "LRN" | "ERR" | "FEAT",
   summary: string,
@@ -63,15 +69,37 @@ async function createLearning(
   const payload = { entryId, entryType, summary, content, ...opts };
   const signature = await signMessage(JSON.stringify(payload));
 
+  let result: CreateLearningResult = {
+    isRepeat: false,
+    correctionCount: 1,
+    needsConfirmation: false,
+  };
+
   try {
-    await fetch(`${BACKEND_URL}/api/agents/learnings`, {
+    const res = await fetch(`${BACKEND_URL}/api/agents/learnings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, signature }),
     });
+    if (res.ok) {
+      const data = (await res.json()) as CreateLearningResult & { entryId: string };
+      result = data;
+    }
     learningsCache = null;
   } catch (err) {
     console.warn("Failed to save learning:", err);
+  }
+
+  // Build response message based on whether this is a repeat
+  if (result.isRepeat) {
+    if (result.needsConfirmation) {
+      return (
+        `⚡ Pattern confirmed (${result.correctionCount}x): ${summary}\n` +
+        `This pattern has been logged 3+ times. Would you like me to promote it to a permanent rule? ` +
+        `Say "yes, promote this" to make it permanent, or "no" to keep observing.`
+      );
+    }
+    return `📝 Similar pattern updated (${result.correctionCount}x): ${summary}`;
   }
 
   return `Logged ${entryType}: ${entryId} — ${summary}`;
@@ -89,14 +117,14 @@ async function logLearning(args: Record<string, unknown>): Promise<string> {
 async function logError(args: Record<string, unknown>): Promise<string> {
   return createLearning("ERR", args.summary as string, args.content as string, {
     category: "error",
-    priority: args.priority as string ?? "high",
+    priority: (args.priority as string) ?? "high",
   });
 }
 
 async function logFeatureRequest(args: Record<string, unknown>): Promise<string> {
   return createLearning("FEAT", args.summary as string, args.content as string, {
     category: "feature-request",
-    priority: args.priority as string ?? "medium",
+    priority: (args.priority as string) ?? "medium",
   });
 }
 
@@ -130,7 +158,9 @@ async function promoteLearning(args: Record<string, unknown>): Promise<string> {
   }
 
   const newContent = existing ? `${existing}\n\n${appendText}` : appendText;
-  const signature = await signMessage(JSON.stringify({ filename: targetFile, content: newContent }));
+  const signature = await signMessage(
+    JSON.stringify({ filename: targetFile, content: newContent })
+  );
 
   try {
     await fetch(`${BACKEND_URL}/api/agents/workspace/${encodeURIComponent(targetFile)}`, {
@@ -156,6 +186,58 @@ async function promoteLearning(args: Record<string, unknown>): Promise<string> {
   }
 
   return `Promoted ${entryId} to ${targetFile}`;
+}
+
+async function memoryStats(): Promise<string> {
+  const entries = await fetchLearnings();
+
+  const stats = {
+    total: entries.length,
+    confirmed: 0,
+    pending: 0,
+    byType: { LRN: 0, ERR: 0, FEAT: 0 } as Record<string, number>,
+  };
+
+  for (const entry of entries) {
+    if (entry.status === "confirmed" || entry.status === "promoted") {
+      stats.confirmed++;
+    } else if (entry.status === "pending") {
+      stats.pending++;
+    }
+    stats.byType[entry.entryType] = (stats.byType[entry.entryType] ?? 0) + 1;
+  }
+
+  // Get memory count from memory module would require importing, so we'll fetch directly
+  let memoryCount = 0;
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/agents/memory`, {
+      headers: { "Content-Type": "application/json" },
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { entries: unknown[] };
+      memoryCount = data.entries?.length ?? 0;
+    }
+  } catch {
+    // ignore
+  }
+
+  const recent = entries.filter((e) => e.status === "pending").slice(0, 5);
+  const recentList =
+    recent.length > 0
+      ? recent.map((e) => `  - [${e.entryType}] ${e.summary}`).join("\n")
+      : "  (none)";
+
+  return `📊 Memory Stats
+
+**Learnings:** ${stats.total} total
+  - Confirmed: ${stats.confirmed}
+  - Pending: ${stats.pending}
+  - By type: LRN=${stats.byType.LRN}, ERR=${stats.byType.ERR}, FEAT=${stats.byType.FEAT}
+
+**Memory Entries:** ${memoryCount}
+
+**Recent Pending:**
+${recentList}`;
 }
 
 // ── EigenAI Tool Definitions ───────────────────────────────────────────────
@@ -244,6 +326,21 @@ export const SI_TOOLS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "memory_stats",
+      description:
+        "Get statistics about what the agent has learned and remembers. " +
+        "Shows counts of learnings by type (LRN/ERR/FEAT), status (confirmed/pending), " +
+        "and memory entries. Use when user asks 'what do you know?' or 'memory stats'.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];
 
 /** Execute a self-improvement tool call, returns null if not a SI tool. */
@@ -262,6 +359,8 @@ export async function executeSITool(
       return searchLearningsHandler(args);
     case "promote_learning":
       return promoteLearning(args);
+    case "memory_stats":
+      return memoryStats();
     default:
       return null;
   }

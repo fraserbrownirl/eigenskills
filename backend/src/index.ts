@@ -28,6 +28,8 @@ import {
   listLearnings,
   searchLearnings,
   updateLearningStatus,
+  deleteLearning,
+  getLearningStats,
   saveWorkspaceFile,
   getWorkspaceFile,
   createTelegramLinkCode,
@@ -150,8 +152,8 @@ app.use((req, res, next) => {
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
-  "https://eigenskills-v2.vercel.app",
-  "https://eigenskills.io",
+  "https://skillsseal.vercel.app",
+  "https://skillsseal.io",
 ].filter(Boolean) as string[];
 
 app.use(
@@ -460,7 +462,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
 
     // Deploy to EigenCompute
     // The ecloud_name is the friendly name passed to --name; the hex app_id is canonical
-    const ecloudName = `eigenskills-${userAddress.slice(2, 10)}`;
+    const ecloudName = `skillsseal-${userAddress.slice(2, 10)}`;
 
     const ecloudEnv = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
     const mnemonic = generateMnemonic(english, 128);
@@ -894,27 +896,28 @@ app.get("/api/agents/info", requireAuth, async (req, res) => {
     // try fetching it live from EigenCompute (handles the case where
     // deploy output didn't include the IP).
     // Prefer ecloud_name for readability in logs, fall back to hex app_id
-    if (!agent.instance_ip && agent.app_id && agent.status === "running") {
+    const needsInfoFetch =
+      !agent.instance_ip || !agent.wallet_address_eth || !agent.wallet_address_sol;
+    if (needsInfoFetch && agent.app_id && agent.status === "running") {
       try {
         const info = await getAppInfo(agent.ecloud_name ?? agent.app_id);
-        if (info.instanceIp) {
-          updateAgent(agent.id, {
-            instance_ip: info.instanceIp,
-            ...(info.dockerDigest && !agent.docker_digest
-              ? { docker_digest: info.dockerDigest }
-              : {}),
-            ...(info.walletAddressEth && !agent.wallet_address_eth
-              ? { wallet_address_eth: info.walletAddressEth }
-              : {}),
-            ...(info.walletAddressSol && !agent.wallet_address_sol
-              ? { wallet_address_sol: info.walletAddressSol }
-              : {}),
-          });
-          agent.instance_ip = info.instanceIp;
-          agent.docker_digest = info.dockerDigest || agent.docker_digest;
-          agent.wallet_address_eth = info.walletAddressEth || agent.wallet_address_eth;
-          agent.wallet_address_sol = info.walletAddressSol || agent.wallet_address_sol;
+        const updates: Record<string, string> = {};
+
+        if (info.instanceIp && !agent.instance_ip) updates.instance_ip = info.instanceIp;
+        if (info.dockerDigest && !agent.docker_digest) updates.docker_digest = info.dockerDigest;
+        if (info.walletAddressEth && !agent.wallet_address_eth)
+          updates.wallet_address_eth = info.walletAddressEth;
+        if (info.walletAddressSol && !agent.wallet_address_sol)
+          updates.wallet_address_sol = info.walletAddressSol;
+
+        if (Object.keys(updates).length > 0) {
+          updateAgent(agent.id, updates);
         }
+
+        agent.instance_ip = info.instanceIp || agent.instance_ip;
+        agent.docker_digest = info.dockerDigest || agent.docker_digest;
+        agent.wallet_address_eth = info.walletAddressEth || agent.wallet_address_eth;
+        agent.wallet_address_sol = info.walletAddressSol || agent.wallet_address_sol;
       } catch (infoErr) {
         console.warn("Failed to fetch app info for running agent:", infoErr);
       }
@@ -1270,8 +1273,14 @@ app.post("/api/agents/learnings", requireAuth, (req, res) => {
       res.status(400).json({ error: "Invalid request: " + parsed.error.issues[0]?.message });
       return;
     }
-    createLearning(userAddress, parsed.data);
-    res.json({ success: true, entryId: parsed.data.entryId });
+    const result = createLearning(userAddress, parsed.data);
+    res.json({
+      success: true,
+      entryId: parsed.data.entryId,
+      isRepeat: result.isRepeat,
+      correctionCount: result.correctionCount,
+      needsConfirmation: result.needsConfirmation,
+    });
   } catch (error) {
     handleRouteError(res, error, "Learning create");
   }
@@ -1313,6 +1322,38 @@ app.patch("/api/agents/learnings/:entryId", requireAuth, (req, res) => {
     res.json({ success: updated });
   } catch (error) {
     handleRouteError(res, error, "Learning update");
+  }
+});
+
+// DELETE /api/agents/learnings/:entryId — delete a learning entry
+app.delete("/api/agents/learnings/:entryId", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const deleted = deleteLearning(userAddress, String(req.params.entryId));
+    if (!deleted) {
+      res.status(404).json({ error: "Learning not found" });
+      return;
+    }
+    res.json({ success: true });
+  } catch (error) {
+    handleRouteError(res, error, "Learning delete");
+  }
+});
+
+// GET /api/agents/learnings/stats — get memory/learning statistics
+app.get("/api/agents/learnings/stats", requireAuth, (req, res) => {
+  try {
+    const userAddress = getUserAddress(req);
+    const learningStats = getLearningStats(userAddress);
+    const memoryEntries = listMemory(userAddress);
+    res.json({
+      learnings: learningStats,
+      memory: {
+        total: memoryEntries.length,
+      },
+    });
+  } catch (error) {
+    handleRouteError(res, error, "Learning stats");
   }
 });
 
@@ -1362,7 +1403,7 @@ app.post("/api/telegram/link", requireAuth, (_req, res) => {
     const userAddress = getUserAddress(_req);
     const code = Math.random().toString(36).slice(2, 10);
     createTelegramLinkCode(userAddress, code);
-    const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? "eigenskills_bot";
+    const botUsername = process.env.TELEGRAM_BOT_USERNAME ?? "skillsseal_bot";
     res.json({
       code,
       url: `https://t.me/${botUsername}?start=${code}`,
@@ -1434,7 +1475,7 @@ const globalErrorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 app.use(globalErrorHandler);
 
 const server = app.listen(PORT, () => {
-  console.log(`EigenSkills Backend running on port ${PORT}`);
+  console.log(`SkillsSeal Backend running on port ${PORT}`);
   try {
     initTelegramBot();
   } catch (err) {

@@ -178,6 +178,7 @@ app.post("/task", async (req, res) => {
       res.json({
         result: finalResponse,
         skillsUsed: loopResult.skillIds,
+        patternsUsed: loopResult.patternsUsed,
         routingSignature: loopResult.signature,
         agentSignature,
         agentAddress: getAgentAddress(),
@@ -255,7 +256,7 @@ diag("before_listen", { PORT, host: "0.0.0.0" });
 // Start server — must bind 0.0.0.0 for TEE external access
 app.listen(PORT, "0.0.0.0", () => {
   diag("listen_success", { PORT, address: getAgentAddress() });
-  console.log(`EigenSkills Agent running on port ${PORT}`);
+  console.log(`SkillsSeal Agent running on port ${PORT}`);
   console.log(`Agent address: ${getAgentAddress()}`);
   console.log(`Network: ${process.env.NETWORK_PUBLIC ?? "not set"}`);
 

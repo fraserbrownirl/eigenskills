@@ -4,7 +4,7 @@ description: >
   Translates text between languages using the OpenAI API. Supports any language
   pair that GPT models can handle. Provide the target language and text as input.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env:
   - OPENAI_API_KEY
 execution:
@@ -16,7 +16,9 @@ dependencies:
 
 # Translate Text
 
-This skill translates text between languages using the OpenAI API.
+Translates text between languages using the OpenAI API. Part of [[text-tools]] but requires `OPENAI_API_KEY`.
+
+For pay-per-call translation without managing keys, consider [[ai]] skills. See also [[humanize-ai-text]] and [[summarize-text]].
 
 ## Usage
 

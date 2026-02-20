@@ -5,7 +5,10 @@ import { tmpdir } from "os";
 import { initDatabase, createDbOperations, type Agent } from "./db.js";
 import type Database from "better-sqlite3";
 
-const TEST_DB_DIR = join(tmpdir(), `eigenskills-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+const TEST_DB_DIR = join(
+  tmpdir(),
+  `skillsseal-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
 
 let testDb: Database.Database;
 let ops: ReturnType<typeof createDbOperations>;
@@ -42,7 +45,9 @@ describe("db", () => {
       ops.ensureUser("0xabc123");
       ops.ensureUser("0xABC123"); // Different case
 
-      const count = testDb.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+      const count = testDb.prepare("SELECT COUNT(*) as count FROM users").get() as {
+        count: number;
+      };
       expect(count.count).toBe(1);
     });
   });

@@ -27,7 +27,7 @@ import { createHash } from "crypto";
 import matter from "gray-matter";
 import { handleX402Request, type X402Request } from "./paytoll.js";
 
-const SKILLS_CACHE_DIR = "/tmp/eigenskills";
+const SKILLS_CACHE_DIR = "/tmp/skillsseal";
 
 const DEFAULT_REGISTRY_REPO = "https://github.com/fraserbrownirl/eigenskills-v2.git";
 

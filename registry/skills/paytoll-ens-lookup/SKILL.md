@@ -4,7 +4,7 @@ description: >
   Resolve ENS names to Ethereum addresses and perform reverse lookups.
   Optionally resolve avatar and text records. Costs $0.001 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # ENS Lookup
 
-Resolve ENS names to addresses and reverse lookups.
+Resolve ENS names to Ethereum addresses and perform reverse lookups via [[x402-payments]]. Can also resolve avatar and text records.
+
+Use before sending funds to verify addresses. Combine with [[paytoll-wallet-validator]] for full address verification.
+
+Part of the [[ens-management]] flow in the [[identity]] domain.
 
 ## Parameters
 

@@ -527,8 +527,8 @@ The agent image must be:
 2. **Pushed to a public registry** — EigenCompute pulls from Docker Hub
 
 ```bash
-docker build --platform linux/amd64 -t username/eigenskills-agent:latest ./agent
-docker push username/eigenskills-agent:latest
+docker build --platform linux/amd64 -t username/skillsseal-agent:latest ./agent
+docker push username/skillsseal-agent:latest
 ```
 
 ### Environment Variables
@@ -563,7 +563,7 @@ docker push username/eigenskills-agent:latest
 - Runtime file modifications run **unattested** — avoid self-editing code
 - Config-driven evolution preserves attestation; upgrade-mediated generates new attestation
 
-## Deploy Architecture (EigenSkills-Specific)
+## Deploy Architecture (SkillsSeal-Specific)
 
 ### Three-Hop Task Execution
 

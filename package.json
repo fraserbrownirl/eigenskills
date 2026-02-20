@@ -1,7 +1,7 @@
 {
-  "name": "eigenskills-v2",
+  "name": "skillsseal",
   "version": "0.1.0",
-  "description": "A verifiable agent platform built on EigenCompute",
+  "description": "SkillsSeal — A verifiable agent platform built on EigenCompute",
   "private": true,
   "scripts": {
     "prepare": "husky || true",

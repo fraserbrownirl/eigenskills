@@ -7,6 +7,7 @@ import {
   AgentStatusCard,
   ContainerLogs,
   ExecutionHistory,
+  MemoryPanel,
   MessagingPanel,
   SecretsPanel,
   SkillsPanel,
@@ -125,6 +126,8 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
                 onMissingVarClick={() => setActiveTab("secrets")}
               />
             )}
+
+            {activeTab === "memory" && <MemoryPanel token={token} onError={setError} />}
 
             {activeTab === "history" && (
               <ExecutionHistory history={history} onRefresh={refreshHistory} />

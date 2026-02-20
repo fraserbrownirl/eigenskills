@@ -4,7 +4,7 @@ description: >
   Validate cryptocurrency wallet addresses with checksum verification for
   Ethereum, Bitcoin, and Solana networks. Costs $0.0005 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Wallet Validator
 
-Validate wallet addresses with checksum verification.
+Validate cryptocurrency wallet addresses with checksum verification for Ethereum, Bitcoin, and Solana via [[x402-payments]].
+
+Use this before any operation that sends funds or interacts with user-provided addresses. Combine with [[paytoll-ens-lookup]] to resolve ENS names to addresses.
+
+Part of the [[identity]] domain.
 
 ## Parameters
 

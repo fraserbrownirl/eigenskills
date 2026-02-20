@@ -1,4 +1,4 @@
-# EigenSkills: Verifiable Agent Platform — Build Plan
+# SkillsSeal: Verifiable Agent Platform — Build Plan
 
 ## What We're Building
 
@@ -74,7 +74,7 @@ Three components:
 ### Repo Structure
 
 ```
-eigenskills-registry/
+skillsseal-registry/
 ├── README.md
 ├── registry.json              ← auto-generated index of all skills
 ├── skills/
@@ -446,7 +446,7 @@ If a skill requires an env var the user hasn't configured, the agent won't route
 ```bash
 # backend/.env
 EIGENCOMPUTE_PRIVATE_KEY=...   # Your ecloud wallet private key
-AGENT_IMAGE_REF=username/eigenskills-agent:latest  # Docker Hub image
+AGENT_IMAGE_REF=username/skillsseal-agent:latest  # Docker Hub image
 EIGENCOMPUTE_ENVIRONMENT=sepolia
 FRONTEND_URL=http://localhost:3000
 PORT=3002
@@ -456,12 +456,12 @@ PORT=3002
 
 1. **Docker image built for `linux/amd64`**
    ```bash
-   docker build --platform linux/amd64 -t username/eigenskills-agent:latest ./agent
+   docker build --platform linux/amd64 -t username/skillsseal-agent:latest ./agent
    ```
 
 2. **Docker image pushed to Docker Hub**
    ```bash
-   docker push username/eigenskills-agent:latest
+   docker push username/skillsseal-agent:latest
    ```
 
 3. **Backend `.env` configured** with `EIGENCOMPUTE_PRIVATE_KEY` and `AGENT_IMAGE_REF`

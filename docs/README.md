@@ -1,11 +1,11 @@
-# EigenSkills
+# SkillsSeal
 
 A verifiable agent platform built on EigenCompute. Users deploy their own AI agent into a Trusted Execution Environment, configure encrypted API keys, and interact with a curated skill registry — all with cryptographic proof.
 
 ## Project Structure
 
 ```
-eigenskills2/
+skillsseal/
 ├── agent/                  # Agent container (deployed per-user into TEE)
 │   ├── src/
 │   │   ├── index.ts        # Express HTTP server
@@ -94,16 +94,16 @@ docker login
 
 # Build for linux/amd64 (required for TEE)
 cd agent
-docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest .
+docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest .
 
 # Push to Docker Hub
-docker push YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
+docker push YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest
 ```
 
 Then update `backend/.env`:
 
 ```bash
-AGENT_IMAGE_REF=YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
+AGENT_IMAGE_REF=YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest
 ```
 
 ### 6. Set environment (optional)
@@ -165,7 +165,7 @@ Configure `backend/.env`:
 EIGENCOMPUTE_PRIVATE_KEY=your_private_key_here
 
 # Docker image pushed to Docker Hub
-AGENT_IMAGE_REF=YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
+AGENT_IMAGE_REF=YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest
 
 # Environment
 EIGENCOMPUTE_ENVIRONMENT=sepolia
@@ -200,10 +200,10 @@ After changing anything in `agent/`, rebuild and upgrade:
 ```bash
 # 1. Rebuild the Docker image
 cd agent
-docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest .
+docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest .
 
 # 2. Push to Docker Hub
-docker push YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
+docker push YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest
 
 # 3. Upgrade existing agent (from Dashboard UI "Update" button or API)
 # The wallet address and grants are preserved!
@@ -245,8 +245,8 @@ You changed `agent/` code but the deployed agent hasn't picked it up.
 **Fix:** Rebuild, push, and upgrade (wallet is preserved):
 ```bash
 cd agent
-docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest .
-docker push YOUR_DOCKERHUB_USERNAME/eigenskills-agent:latest
+docker build --platform linux/amd64 -t YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest .
+docker push YOUR_DOCKERHUB_USERNAME/skillsseal-agent:latest
 # Then click "Update" in the Dashboard (or call POST /api/agents/upgrade)
 ```
 

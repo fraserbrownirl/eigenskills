@@ -4,7 +4,7 @@ description: >
   Get overview of all Aave V3 markets with TVL and rates. Costs $0.005
   per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Aave Markets
 
-Get overview of all Aave V3 markets.
+Get an overview of all Aave V3 markets with TVL and rates via [[x402-payments]]. Use this to explore lending opportunities before using [[paytoll-aave-supply]] or [[paytoll-aave-borrow]].
+
+For specific yield/rate optimization, use [[paytoll-aave-best-yield]] or [[paytoll-aave-best-borrow]]. For individual position details, use [[paytoll-aave-user-positions]].
+
+See [[aave-lending]] for market analysis guidance.
 
 ## Parameters
 

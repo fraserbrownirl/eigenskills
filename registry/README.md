@@ -1,6 +1,6 @@
-# EigenSkills Registry
+# SkillsSeal Registry
 
-A curated registry of agent skills for the EigenSkills platform.
+A curated registry of agent skills for the SkillsSeal platform.
 
 ## Structure
 

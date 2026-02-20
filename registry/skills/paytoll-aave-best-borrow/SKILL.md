@@ -4,7 +4,7 @@ description: >
   Find the lowest Aave V3 borrow APR across all chains for a given asset.
   Costs $0.01 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Aave Best Borrow
 
-Find lowest borrow APR across chains.
+Find the lowest Aave V3 borrow APR across all chains via [[x402-payments]]. Use this before [[paytoll-aave-borrow]] to minimize interest costs.
+
+Compare with [[paytoll-aave-markets]] for detailed market data. If the best rate is on a different chain, use [[dex-trading]] skills to move assets.
+
+See [[aave-lending]] for borrowing strategy and [[paytoll-aave-health-factor]] for risk management.
 
 ## Parameters
 

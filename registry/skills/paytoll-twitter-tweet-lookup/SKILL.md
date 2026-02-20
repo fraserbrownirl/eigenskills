@@ -4,7 +4,7 @@ description: >
   Look up tweets by ID with metrics and author info. Supports up to 10
   tweets per call. Costs $0.02 per call.
 version: 1.0.0
-author: eigenskills
+author: skillsseal
 requires_env: []
 execution:
   - run: node run.js {{input}}
@@ -12,7 +12,11 @@ execution:
 
 # Twitter Tweet Lookup
 
-Look up tweets by ID via PayToll.
+Look up tweets by ID with metrics and author info via [[x402-payments]]. Supports up to 10 tweets per call.
+
+Use after [[paytoll-twitter-search]] to get detailed metrics on interesting tweets. Combine with [[paytoll-twitter-user-lookup]] to research the authors.
+
+Part of the [[social]] domain.
 
 ## Parameters
 
