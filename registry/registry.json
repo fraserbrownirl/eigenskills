@@ -10,8 +10,62 @@
       "hasExecutionManifest": true
     },
     {
+      "id": "paytoll-cancel-task",
+      "description": "Cancel a PayToll task and initiate refund flow. Can cancel tasks that are pending, funded, or in progress. Refund amount depends on task state and work completed.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:f648b004ebcadb5144bbed4ca3e6e2d322691d06569d0e26aecbda701d3e1389",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-create-task",
+      "description": "Create a paid task on PayToll and assign it to a specific agent. Use after discovering agents via search. Requires funding via fund-escrow before work begins.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:a6e5e36cc52bc22c360a7b852ff9db5f3843f60f1c223606530787d9ef3be40c",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-fund-escrow",
+      "description": "Fund escrow for a PayToll task to initiate work. The assigned agent will not begin until escrow is funded. USDC is locked until task completion or cancellation.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:f4477ff8afdf0b92e2a523e673297fb1de60d79d6e49b1ec77d5dce090729325",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-get-task-result",
+      "description": "Retrieve the final deliverable from a completed PayToll task. Only available after task status shows \"completed\". Returns the agent's work output and releases escrow payment.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:ccc465d19b5d5f3ff013e05b7124ae7c5b63dd976ee18551c3ab4c5483152e06",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-get-task-status",
+      "description": "Poll the status of a PayToll task. Returns current state, progress percentage, and any intermediate results. Use to monitor delegated work in progress.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:6a143a06a745ba9c84696b2545f0d264e8ed622fd765ca18433c118fc3b25dca",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
+      "id": "paytoll-search-agents",
+      "description": "Search PayToll's agent marketplace by capability, price, or reputation. Returns matching agents with profiles and pricing for task delegation. Use when you need to find another agent to delegate work to.",
+      "version": "1.0.0",
+      "author": "eigenskills",
+      "contentHash": "sha256:d37cbbdbd659704ef669a89205eaee8cb08ae031c073f77aa07158c8cd83524f",
+      "requiresEnv": [],
+      "hasExecutionManifest": true
+    },
+    {
       "id": "summarize-text",
-      "description": "Summarizes long text into concise bullet points or a short paragraph. Works with articles, documents, meeting notes, or any lengthy content. No external API required — uses simple extractive summarization.",
+      "description": "Summarizes long text into concise bullet points or a short paragraph. Works with articles, documents, meeting notes, or any lengthy content. No external API required \u2014 uses simple extractive summarization.",
       "version": "1.0.0",
       "author": "eigenskills",
       "contentHash": "sha256:58b31da6949d237e61a5666c2bc83595b800401bd47214636258056e660060d4",
@@ -23,26 +77,11 @@
       "description": "Translates text between languages using the OpenAI API. Supports any language pair that GPT models can handle. Provide the target language and text as input.",
       "version": "1.0.0",
       "author": "eigenskills",
-      "contentHash": "sha256:f0920ac6f22b82ded25e8d369e16eb0c6428570101d47c90d0deba57799103ee",
+      "contentHash": "sha256:f448b86fe6c903717597562b5f77077799e65fbde4d9d2b682ffea6e199c903a",
       "requiresEnv": [
         "OPENAI_API_KEY"
       ],
       "hasExecutionManifest": true
-    },
-    {
-      "id": "paytoll",
-      "description": "Delegate tasks to specialized AI agents via PayToll's agent marketplace. Search for agents, create tasks, fund escrow, and retrieve results — all with x402 micropayments on Base.",
-      "version": "1.0.0",
-      "author": "eigenskills",
-      "contentHash": "sha256:pending",
-      "requiresEnv": [],
-      "hasExecutionManifest": false,
-      "x402": {
-        "enabled": true,
-        "costPerCall": "0.001-0.01",
-        "currency": "USDC",
-        "network": "base"
-      }
     }
   ]
 }
