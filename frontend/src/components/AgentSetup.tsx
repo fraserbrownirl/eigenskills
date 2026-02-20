@@ -44,6 +44,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
   const [name, setName] = useState("");
   const [persona, setPersona] = useState("");
   const [envVars, setEnvVars] = useState<EnvVar[]>([]);
+  const [verifiable, setVerifiable] = useState(true);
   const [deploying, setDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,11 +145,13 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
         );
       }
 
-      const result = await deployAgent(token, name, allVars);
+      const result = await deployAgent(token, name, allVars, verifiable);
 
       // Handle async deployment (GitHub Actions)
       if (result.pending && result.dispatchId) {
-        setDeployProgress("Deployment started. Waiting for EigenCompute to provision your agent...");
+        setDeployProgress(
+          "Deployment started. Waiting for EigenCompute to provision your agent..."
+        );
 
         const finalStatus = await pollDeployStatus(
           token,
@@ -158,9 +161,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
               const elapsed = status.createdAt
                 ? Math.floor((Date.now() - new Date(status.createdAt).getTime()) / 1000)
                 : 0;
-              setDeployProgress(
-                `Deploying to EigenCompute... (${elapsed}s elapsed)`
-              );
+              setDeployProgress(`Deploying to EigenCompute... (${elapsed}s elapsed)`);
             }
           },
           300000,
@@ -197,7 +198,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
       {/* Step indicator */}
       <div className="mb-8">
         <div className="flex items-center justify-between">
-          {steps.map((s, i) => {
+          {steps.map((s) => {
             const Icon = s.icon;
             const isActive = s.id === step;
             const isCompleted = s.id < step;
@@ -249,7 +250,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
         </div>
       </div>
 
-      <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl">
+      <Card className="border-border bg-card shadow-lg">
         {/* Step 1: Name + Persona */}
         {step === 1 && (
           <>
@@ -273,7 +274,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="My Verifiable Agent"
-                  className="bg-zinc-900/50"
+                  className="bg-background"
                 />
               </div>
               <div className="space-y-2">
@@ -289,7 +290,7 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                   onChange={(e) => setPersona(e.target.value)}
                   placeholder="Be concise and direct. Have opinions. When you discover something non-obvious, log it as a learning."
                   rows={4}
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-zinc-900/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <p className="text-xs text-muted-foreground">
                   Defines how your agent communicates and behaves. Blank uses the default.
@@ -515,6 +516,12 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                     <p className="text-foreground">g1-standard-4t</p>
                   </div>
                   <div>
+                    <span className="text-sm text-muted-foreground">Build type</span>
+                    <p className="text-foreground">
+                      {verifiable ? "Verifiable (on-chain attestation)" : "Standard"}
+                    </p>
+                  </div>
+                  <div>
                     <span className="text-sm text-muted-foreground">Environment variables</span>
                     <p className="text-foreground">
                       {envVars.filter((v) => v.key).length} custom (
@@ -554,6 +561,26 @@ export default function AgentSetup({ token, onDeployed }: AgentSetupProps) {
                         Separate Grant Required
                       </Badge>
                     )}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-sm font-medium">Verifiable Build</span>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        On-chain attestation proves exactly what code runs in your agent
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={verifiable}
+                        onChange={(e) => setVerifiable(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
                   </div>
                 </div>
               </div>

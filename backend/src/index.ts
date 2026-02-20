@@ -53,6 +53,8 @@ import {
 } from "./eigencompute.js";
 import { createHmac, timingSafeEqual } from "crypto";
 import { encryptEnvVars, decryptEnvVars } from "./envVarsEncrypt.js";
+import { generateMnemonic } from "@scure/bip39";
+import { wordlist as english } from "@scure/bip39/wordlists/english";
 
 // Request validation schemas
 const envVarSchema = z.object({
@@ -67,6 +69,7 @@ const envVarSchema = z.object({
 const deployRequestSchema = z.object({
   name: z.string().min(1).max(64),
   envVars: z.array(envVarSchema),
+  verifiable: z.boolean().optional().default(false),
 });
 
 const upgradeRequestSchema = z.object({
@@ -243,6 +246,44 @@ async function proxyGetToAgent(
 }
 
 /**
+ * Wait for agent health endpoint to respond successfully.
+ * @returns true if healthy, false if timeout reached
+ */
+async function waitForAgentHealth(
+  instanceIp: string,
+  options: { timeoutMs?: number; intervalMs?: number } = {}
+): Promise<boolean> {
+  const { timeoutMs = 120_000, intervalMs = 5_000 } = options;
+  const deadline = Date.now() + timeoutMs;
+
+  console.log(`Waiting for agent health at ${instanceIp}:${AGENT_PORT}...`);
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`http://${instanceIp}:${AGENT_PORT}/health`, {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        console.log(`Agent at ${instanceIp} is healthy`);
+        return true;
+      }
+    } catch {
+      // Connection refused, timeout, etc. — keep trying
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining > intervalMs) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    } else if (remaining > 0) {
+      await new Promise((r) => setTimeout(r, remaining));
+    }
+  }
+
+  console.warn(`Agent at ${instanceIp} did not become healthy within ${timeoutMs}ms`);
+  return false;
+}
+
+/**
  * Format an error for API response, hiding internal details.
  */
 function handleRouteError(
@@ -251,6 +292,53 @@ function handleRouteError(
   context: string
 ): void {
   console.error(`${context} error:`, error);
+  res.status(500).json({ error: `${context} failed` });
+}
+
+/**
+ * Handle errors from agent proxy requests with specific status codes.
+ * - ECONNREFUSED/ECONNRESET → 503 (agent starting up)
+ * - ETIMEDOUT/timeout → 504 (agent unreachable)
+ * - Other fetch errors → 502 (bad gateway)
+ */
+function handleAgentProxyError(
+  res: { status: (code: number) => { json: (body: unknown) => void } },
+  error: unknown,
+  context: string
+): void {
+  console.error(`${context} error:`, error);
+
+  const errorCode = (error as { code?: string })?.code;
+  const errorCause = (error as { cause?: { code?: string } })?.cause?.code;
+  const code = errorCode || errorCause;
+
+  if (code === "ECONNREFUSED" || code === "ECONNRESET") {
+    res.status(503).json({
+      error: "Agent is starting up or restarting. Please try again in a few seconds.",
+      retryable: true,
+    });
+    return;
+  }
+
+  if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") {
+    res.status(504).json({
+      error: "Agent is unreachable. It may be stopped or experiencing issues.",
+      retryable: false,
+    });
+    return;
+  }
+
+  if (
+    error instanceof TypeError &&
+    (error.message.includes("fetch") || error.message.includes("network"))
+  ) {
+    res.status(502).json({
+      error: "Failed to connect to agent.",
+      retryable: true,
+    });
+    return;
+  }
+
   res.status(500).json({ error: `${context} failed` });
 }
 
@@ -343,7 +431,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       return;
     }
 
-    const { name, envVars } = parsed.data;
+    const { name, envVars, verifiable } = parsed.data;
 
     // Ensure user exists in DB (handles case where DB was reset)
     ensureUser(userAddress);
@@ -373,15 +461,39 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
     // Deploy to EigenCompute
     // The ecloud_name is the friendly name passed to --name; the hex app_id is canonical
     const ecloudName = `eigenskills-${userAddress.slice(2, 10)}`;
-    const result = await deployAgent(ecloudName, envVars);
+
+    const ecloudEnv = process.env.EIGENCOMPUTE_ENVIRONMENT ?? "sepolia";
+    const mnemonic = generateMnemonic(english, 128);
+    const systemVars: Array<{ key: string; value: string; isPublic: boolean }> = [
+      { key: "MNEMONIC", value: mnemonic, isPublic: false },
+      {
+        key: "BACKEND_URL",
+        value: process.env.BACKEND_PUBLIC_URL ?? "https://eigenskills-backend.fly.dev",
+        isPublic: false,
+      },
+      {
+        key: "SKILL_REGISTRY_URL",
+        value:
+          "https://raw.githubusercontent.com/fraserbrownirl/eigenskills-v2/main/registry/registry.json",
+        isPublic: true,
+      },
+      {
+        key: "NETWORK_PUBLIC",
+        value: ecloudEnv === "sepolia" ? "sepolia" : "mainnet",
+        isPublic: true,
+      },
+    ];
+    const userKeys = new Set(envVars.map((v: { key: string }) => v.key));
+    const mergedEnvVars = [...systemVars.filter((sv) => !userKeys.has(sv.key)), ...envVars];
+
+    const result = await deployAgent(ecloudName, mergedEnvVars, verifiable);
 
     // Handle async deployment (GitHub Actions)
     if (isAsyncDeployResult(result)) {
-      // Store env vars and mark as deploying
       updateAgent(agentId, {
         ecloud_name: ecloudName,
         status: "deploying",
-        env_vars: encryptEnvVars(JSON.stringify(envVars)),
+        env_vars: encryptEnvVars(JSON.stringify(mergedEnvVars)),
       });
 
       // Track the pending deploy
@@ -412,7 +524,7 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       }
     }
 
-    // Update agent record with deployment details
+    // Update agent record with IP first (status still "deploying")
     updateAgent(agentId, {
       app_id: result.appId,
       ecloud_name: ecloudName,
@@ -420,15 +532,25 @@ app.post("/api/agents/deploy", deployLimiter, requireAuth, async (req, res) => {
       wallet_address_sol: walletAddressSol,
       instance_ip: instanceIp,
       docker_digest: dockerDigest,
-      status: "running",
-      env_vars: encryptEnvVars(JSON.stringify(envVars)),
+      status: "deploying",
+      env_vars: encryptEnvVars(JSON.stringify(mergedEnvVars)),
     });
+
+    // Wait for agent to become healthy before marking as running
+    let healthy = false;
+    if (instanceIp) {
+      healthy = await waitForAgentHealth(instanceIp, { timeoutMs: 120_000, intervalMs: 5_000 });
+    }
+
+    // Mark as running once healthy (or after timeout, so user can still try)
+    updateAgent(agentId, { status: "running" });
 
     res.json({
       agentId,
       appId: result.appId,
       walletAddress: walletAddressEth,
       instanceIp,
+      healthy,
     });
   } catch (error) {
     console.error("Deploy error:", error);
@@ -648,10 +770,28 @@ app.post("/api/agents/upgrade", requireAuth, async (req, res) => {
       }
     }
 
-    await upgradeAgent(agent.app_id, envVars);
+    // Preserve system vars (MNEMONIC, BACKEND_URL, etc.) from stored env
+    const SYSTEM_KEYS = ["MNEMONIC", "BACKEND_URL", "SKILL_REGISTRY_URL", "NETWORK_PUBLIC"];
+    const upgradeUserKeys = new Set(envVars.map((v: { key: string }) => v.key));
+    let storedSystemVars: Array<{ key: string; value: string; isPublic: boolean }> = [];
+    if (agent.env_vars) {
+      try {
+        const allStored: Array<{ key: string; value: string; isPublic: boolean }> = JSON.parse(
+          decryptEnvVars(agent.env_vars)
+        );
+        storedSystemVars = allStored.filter(
+          (v) => SYSTEM_KEYS.includes(v.key) && !upgradeUserKeys.has(v.key)
+        );
+      } catch {
+        /* stored vars unreadable — skip */
+      }
+    }
+    const upgradeEnvVars = [...storedSystemVars, ...envVars];
+
+    await upgradeAgent(agent.app_id, upgradeEnvVars);
     updateAgent(agent.id, {
       status: "running",
-      env_vars: encryptEnvVars(JSON.stringify(envVars)),
+      env_vars: encryptEnvVars(JSON.stringify(upgradeEnvVars)),
     });
 
     res.json({ success: true });
@@ -878,7 +1018,7 @@ app.post("/api/agents/task", requireAuth, async (req, res) => {
     const result = await agentRes.json();
     res.json(result);
   } catch (error) {
-    handleRouteError(res, error, "Task proxy");
+    handleAgentProxyError(res, error, "Task proxy");
   }
 });
 
@@ -887,7 +1027,16 @@ app.get("/api/agents/skills", requireAuth, async (req, res) => {
   try {
     await proxyGetToAgent(req, res, "/skills", "skills");
   } catch (error) {
-    handleRouteError(res, error, "Skills proxy");
+    handleAgentProxyError(res, error, "Skills proxy");
+  }
+});
+
+// GET /api/agents/skills-catalog — proxy to agent's skills-catalog endpoint
+app.get("/api/agents/skills-catalog", requireAuth, async (req, res) => {
+  try {
+    await proxyGetToAgent(req, res, "/skills-catalog", "skills catalog");
+  } catch (error) {
+    handleAgentProxyError(res, error, "Skills catalog proxy");
   }
 });
 
@@ -896,7 +1045,7 @@ app.get("/api/agents/history", requireAuth, async (req, res) => {
   try {
     await proxyGetToAgent(req, res, "/history", "history");
   } catch (error) {
-    handleRouteError(res, error, "History proxy");
+    handleAgentProxyError(res, error, "History proxy");
   }
 });
 

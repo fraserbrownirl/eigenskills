@@ -1,3 +1,10 @@
+export interface X402Config {
+  enabled: boolean;
+  costPerCall: string;
+  currency: string;
+  network: string;
+}
+
 export interface Skill {
   id: string;
   description: string;
@@ -6,6 +13,12 @@ export interface Skill {
   contentHash: string;
   requiresEnv: string[];
   hasExecutionManifest: boolean;
+  x402?: X402Config;
+}
+
+export interface SkillCatalogEntry extends Skill {
+  status: "enabled" | "disabled";
+  missingEnvVars: string[];
 }
 
 interface Registry {
@@ -58,4 +71,23 @@ export async function listSkills(): Promise<Skill[]> {
 export async function getSkill(id: string): Promise<Skill | undefined> {
   const registry = await fetchRegistry();
   return registry.skills.find((s) => s.id === id);
+}
+
+/**
+ * Returns ALL skills from the registry with their enabled/disabled status.
+ * Unlike listSkills(), this includes skills that are missing required env vars.
+ */
+export async function listSkillsCatalog(): Promise<SkillCatalogEntry[]> {
+  const registry = await fetchRegistry();
+
+  return registry.skills.map((skill) => {
+    const missingEnvVars = skill.requiresEnv.filter((envVar) => !process.env[envVar]);
+    const status = missingEnvVars.length === 0 ? "enabled" : "disabled";
+
+    return {
+      ...skill,
+      status,
+      missingEnvVars,
+    };
+  });
 }

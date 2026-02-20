@@ -103,12 +103,13 @@ export interface DeployStatusResponse {
 export async function deployAgent(
   token: string,
   name: string,
-  envVars: EnvVar[]
+  envVars: EnvVar[],
+  verifiable: boolean = false
 ): Promise<DeployResponse> {
   const res = await fetch(`${BACKEND_URL}/api/agents/deploy`, {
     method: "POST",
     headers: getHeaders(token),
-    body: JSON.stringify({ name, envVars }),
+    body: JSON.stringify({ name, envVars, verifiable }),
   });
   if (!res.ok) {
     const err = await res.json();
@@ -229,6 +230,13 @@ export async function submitTask(
   return res.json();
 }
 
+export interface X402Config {
+  enabled: boolean;
+  costPerCall: string;
+  currency: string;
+  network: string;
+}
+
 export interface Skill {
   id: string;
   description: string;
@@ -237,10 +245,25 @@ export interface Skill {
   contentHash: string;
   requiresEnv: string[];
   hasExecutionManifest: boolean;
+  x402?: X402Config;
+}
+
+export interface SkillCatalogEntry extends Skill {
+  status: "enabled" | "disabled";
+  missingEnvVars: string[];
 }
 
 export async function getSkills(token: string): Promise<Skill[]> {
   const res = await fetch(`${BACKEND_URL}/api/agents/skills`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.skills ?? [];
+}
+
+export async function getSkillsCatalog(token: string): Promise<SkillCatalogEntry[]> {
+  const res = await fetch(`${BACKEND_URL}/api/agents/skills-catalog`, {
     headers: getHeaders(token),
   });
   if (!res.ok) return [];
@@ -272,4 +295,45 @@ export async function getLogs(token: string, lines: number = 100): Promise<strin
   if (!res.ok) return "";
   const data = await res.json();
   return data.logs ?? "";
+}
+
+export interface TelegramLinkResponse {
+  code: string;
+  url: string;
+}
+
+export interface TelegramStatus {
+  linked: boolean;
+  chatId: string | null;
+}
+
+export async function getTelegramLinkCode(token: string): Promise<TelegramLinkResponse> {
+  const res = await fetch(`${BACKEND_URL}/api/telegram/link`, {
+    method: "POST",
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to generate Telegram link");
+  }
+  return res.json();
+}
+
+export async function getTelegramStatus(token: string): Promise<TelegramStatus> {
+  const res = await fetch(`${BACKEND_URL}/api/telegram/status`, {
+    headers: getHeaders(token),
+  });
+  if (!res.ok) return { linked: false, chatId: null };
+  return res.json();
+}
+
+export async function unlinkTelegram(token: string): Promise<void> {
+  const res = await fetch(`${BACKEND_URL}/api/telegram/link`, {
+    method: "DELETE",
+    headers: getHeaders(token),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error ?? "Failed to unlink Telegram");
+  }
 }

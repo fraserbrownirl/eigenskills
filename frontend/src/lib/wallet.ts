@@ -88,7 +88,7 @@ export async function signSiweMessage(address: string): Promise<{
   const siweMessage = new SiweMessage({
     domain: window.location.host,
     address,
-    statement: "Sign in to EigenSkills",
+    statement: "Sign in to SkillSeal",
     uri: window.location.origin,
     version: "1",
     chainId: Number(chainId),

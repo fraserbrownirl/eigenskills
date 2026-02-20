@@ -8,7 +8,7 @@ import {
   ContainerLogs,
   ExecutionHistory,
   SettingsPanel,
-  SkillsList,
+  SkillsPanel,
   TabNavigation,
   TaskInterface,
   TerminateConfirmation,
@@ -29,7 +29,7 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
   const {
     agent,
     loading,
-    skills,
+    skillsCatalog,
     history,
     logs,
     logsLoading,
@@ -118,7 +118,12 @@ export default function Dashboard({ token, address, onAgentTerminated }: Dashboa
               />
             )}
 
-            {activeTab === "skills" && <SkillsList skills={skills} />}
+            {activeTab === "skills" && (
+              <SkillsPanel
+                skills={skillsCatalog}
+                onMissingVarClick={() => setActiveTab("settings")}
+              />
+            )}
 
             {activeTab === "history" && (
               <ExecutionHistory history={history} onRefresh={refreshHistory} />

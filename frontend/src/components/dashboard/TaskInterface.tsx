@@ -49,7 +49,7 @@ export function TaskInterface({
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl h-full">
+      <Card className="border-border bg-card shadow-sm h-full">
         <CardHeader>
           <CardTitle>Submit Task</CardTitle>
           <CardDescription>
@@ -59,13 +59,13 @@ export function TaskInterface({
         </CardHeader>
         <CardContent>
           {agentStartingUp && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400">
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-600">
               <Loader2 className="h-4 w-4 animate-spin shrink-0" />
               Agent is starting up. Waiting for instance IP...
             </div>
           )}
           {!agentStartingUp && canSubmit && !healthy && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400">
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-600">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               Agent health check pending — you can still submit tasks.
             </div>
@@ -74,7 +74,7 @@ export function TaskInterface({
             value={task}
             onChange={(e) => setTask(e.target.value)}
             placeholder="e.g., Analyze the sentiment of the latest Ethereum news..."
-            className="min-h-[200px] w-full resize-none rounded-lg border border-zinc-800 bg-zinc-950 p-4 text-sm text-white placeholder-zinc-500 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            className="min-h-[200px] w-full resize-none rounded-lg border border-border bg-secondary/50 p-4 text-sm text-foreground placeholder-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
             disabled={!canSubmit || submitting}
           />
         </CardContent>
@@ -94,7 +94,7 @@ export function TaskInterface({
         </CardFooter>
       </Card>
 
-      <Card className="border-zinc-800 bg-zinc-900/50 backdrop-blur-xl h-full flex flex-col">
+      <Card className="border-border bg-card shadow-sm h-full flex flex-col">
         <CardHeader>
           <CardTitle>Result</CardTitle>
           <CardDescription>Output from your agent&apos;s execution.</CardDescription>
@@ -103,20 +103,20 @@ export function TaskInterface({
           {result ? (
             <div className="space-y-4">
               <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-4">
-                <div className="flex items-center gap-2 text-emerald-500 mb-2">
+                <div className="flex items-center gap-2 text-emerald-600 mb-2">
                   <CheckCircle2 className="h-5 w-5" />
                   <span className="font-semibold">Execution Successful</span>
                 </div>
-                <pre className="whitespace-pre-wrap text-sm text-zinc-300 font-mono">
+                <pre className="whitespace-pre-wrap text-sm text-foreground font-mono">
                   {result.result}
                 </pre>
               </div>
 
               {result.skillsUsed.length > 0 && (
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
+                <div className="rounded-lg border border-border bg-secondary/50 p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Cpu className="h-4 w-4 text-zinc-500" />
-                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                    <Cpu className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Skills Used
                     </span>
                   </div>
@@ -134,27 +134,29 @@ export function TaskInterface({
               )}
 
               {(result.agentSignature || result.routingSignature) && (
-                <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4 space-y-3">
+                <div className="rounded-lg border border-border bg-secondary/50 p-4 space-y-3">
                   <div className="flex items-center gap-2 mb-1">
-                    <ShieldCheck className="h-4 w-4 text-zinc-500" />
-                    <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                    <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Verifiable Signatures
                     </span>
                   </div>
                   {result.agentSignature && (
                     <div>
-                      <span className="text-[10px] font-medium text-zinc-600 uppercase">Agent</span>
-                      <p className="mt-0.5 break-all font-mono text-xs text-zinc-400">
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase">
+                        Agent
+                      </span>
+                      <p className="mt-0.5 break-all font-mono text-xs text-foreground/70">
                         {result.agentSignature}
                       </p>
                     </div>
                   )}
                   {result.routingSignature && (
                     <div>
-                      <span className="text-[10px] font-medium text-zinc-600 uppercase">
+                      <span className="text-[10px] font-medium text-muted-foreground uppercase">
                         Routing
                       </span>
-                      <p className="mt-0.5 break-all font-mono text-xs text-zinc-400">
+                      <p className="mt-0.5 break-all font-mono text-xs text-foreground/70">
                         {result.routingSignature}
                       </p>
                     </div>
@@ -163,7 +165,7 @@ export function TaskInterface({
               )}
             </div>
           ) : (
-            <div className="flex h-full items-center justify-center text-zinc-500">
+            <div className="flex h-full items-center justify-center text-muted-foreground">
               <p>No result yet. Submit a task to see output.</p>
             </div>
           )}

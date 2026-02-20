@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   getAgentInfo,
-  getSkills,
+  getSkillsCatalog,
   getHistory,
   getLogs,
   type AgentInfo,
-  type Skill,
+  type SkillCatalogEntry,
   type HistoryEntry,
 } from "@/lib/api";
 
@@ -25,7 +25,7 @@ export interface UseAgentPollingOptions {
 export interface UseAgentPollingResult {
   agent: AgentInfo | null;
   loading: boolean;
-  skills: Skill[];
+  skillsCatalog: SkillCatalogEntry[];
   history: HistoryEntry[];
   logs: string;
   logsLoading: boolean;
@@ -44,7 +44,7 @@ export function useAgentPolling({
   const [agent, setAgent] = useState<AgentInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [skillsCatalog, setSkillsCatalog] = useState<SkillCatalogEntry[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [logs, setLogs] = useState("");
   const [logsLoading, setLogsLoading] = useState(false);
@@ -63,10 +63,10 @@ export function useAgentPolling({
   const refreshSkills = useCallback(async () => {
     if (!agent?.instanceIp) return;
     try {
-      const s = await getSkills(token);
-      setSkills(s);
+      const catalog = await getSkillsCatalog(token);
+      setSkillsCatalog(catalog);
     } catch {
-      console.error("Failed to fetch skills");
+      console.error("Failed to fetch skills catalog");
     }
   }, [token, agent?.instanceIp]);
 
@@ -113,7 +113,7 @@ export function useAgentPolling({
   return {
     agent,
     loading,
-    skills,
+    skillsCatalog,
     history,
     logs,
     logsLoading,

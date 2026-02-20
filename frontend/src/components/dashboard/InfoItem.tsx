@@ -20,13 +20,13 @@ export function InfoItem({ label, value, mono, copyable }: InfoItemProps) {
 
   return (
     <div className="min-w-0">
-      <span className="text-xs font-medium text-zinc-500">{label}</span>
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1">
-        <p className={`truncate text-sm text-zinc-200 ${mono ? "font-mono" : ""}`}>{value}</p>
+        <p className={`truncate text-sm text-foreground ${mono ? "font-mono" : ""}`}>{value}</p>
         {copyable && (
           <button
             onClick={handleCopy}
-            className="shrink-0 rounded p-1 text-zinc-500 transition-colors hover:text-zinc-300"
+            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
             aria-label={copied ? "Copied" : "Copy to clipboard"}
           >
             {copied ? (

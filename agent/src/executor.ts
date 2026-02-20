@@ -1,4 +1,18 @@
-import { execSync } from "child_process";
+/**
+ * Skill Executor
+ *
+ * Executes skills in sandboxed subprocesses with:
+ * - Restricted environment variables (only what skills declare in requires_env)
+ * - Content hash verification for verifiability
+ * - fd3 IPC channel for x402 payment requests (PayToll integration)
+ *
+ * BREAKING CHANGE (v2): Migrated from execSync to spawn with fd3 IPC.
+ * All skills continue to work unchanged. Skills that need x402 payments
+ * can communicate via fd3 using the paytoll-client.js helper.
+ */
+
+import { spawn } from "child_process";
+import { createInterface, type Interface as ReadlineInterface } from "readline";
 import {
   readFileSync,
   writeFileSync,
@@ -11,10 +25,10 @@ import {
 import { join, resolve } from "path";
 import { createHash } from "crypto";
 import matter from "gray-matter";
+import { handleX402Request, type X402Request } from "./paytoll.js";
 
 const SKILLS_CACHE_DIR = "/tmp/eigenskills";
 
-// Remote registry for production (can be overridden via env)
 const DEFAULT_REGISTRY_REPO = "https://github.com/fraserbrownirl/eigenskills-v2.git";
 
 function getLocalRegistryPath(): string | undefined {
@@ -25,11 +39,9 @@ function getRegistryRepo(): string {
   return process.env.SKILL_REGISTRY_REPO ?? DEFAULT_REGISTRY_REPO;
 }
 
-// Execution limits
 const EXEC_TIMEOUT_MS = 30_000;
 const EXEC_MAX_BUFFER = 1024 * 1024; // 1MB
 
-// File permissions
 const SECURE_FILE_MODE = 0o600;
 
 const SAFE_SKILL_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}$/;
@@ -43,9 +55,6 @@ function validateSkillId(id: string): string {
   return id;
 }
 
-/**
- * Recursively list all files in a directory.
- */
 function listFilesRecursively(dir: string, baseDir: string = dir): string[] {
   const files: string[] = [];
   const entries = readdirSync(dir, { withFileTypes: true });
@@ -55,7 +64,6 @@ function listFilesRecursively(dir: string, baseDir: string = dir): string[] {
     if (entry.isDirectory()) {
       files.push(...listFilesRecursively(fullPath, baseDir));
     } else {
-      // Store relative path from base directory
       files.push(fullPath.slice(baseDir.length + 1));
     }
   }
@@ -63,17 +71,12 @@ function listFilesRecursively(dir: string, baseDir: string = dir): string[] {
   return files;
 }
 
-/**
- * Compute SHA-256 content hash of a skill folder.
- * Files are sorted alphabetically and concatenated to ensure deterministic hash.
- */
 function computeContentHash(skillDir: string): string {
   const files = listFilesRecursively(skillDir).sort();
   const hash = createHash("sha256");
 
   for (const relPath of files) {
     const content = readFileSync(join(skillDir, relPath), "utf-8");
-    // Include filename in hash to detect renames
     hash.update(`${relPath}\n${content}\n`);
   }
 
@@ -93,23 +96,16 @@ export interface ExecutionResult {
   skillId: string;
 }
 
-/**
- * Fetch a skill folder from local registry or remote git repo.
- * In development, set SKILL_REGISTRY_LOCAL to use local files.
- * In production, uses git sparse-checkout to pull only the specific skill.
- */
 function fetchSkillFolder(skillId: string): string {
   validateSkillId(skillId);
   const skillDir = join(SKILLS_CACHE_DIR, skillId);
 
-  // Return cached skill if already fetched
   if (existsSync(skillDir)) {
     return skillDir;
   }
 
   mkdirSync(SKILLS_CACHE_DIR, { recursive: true });
 
-  // Development mode: copy from local registry
   const localRegistryPath = getLocalRegistryPath();
   if (localRegistryPath) {
     const localSkillPath = resolve(localRegistryPath, skillId);
@@ -120,18 +116,30 @@ function fetchSkillFolder(skillId: string): string {
     return skillDir;
   }
 
-  // Production mode: clone from git
+  // Production mode: use synchronous spawn for git operations
   const repoDir = join(SKILLS_CACHE_DIR, "_repo");
   const registryRepo = getRegistryRepo();
   if (!existsSync(repoDir)) {
-    execSync(`git clone --depth 1 --filter=blob:none --sparse "${registryRepo}" "${repoDir}"`, {
-      stdio: "pipe",
-    });
+    const result = spawnSync("git", [
+      "clone",
+      "--depth",
+      "1",
+      "--filter=blob:none",
+      "--sparse",
+      registryRepo,
+      repoDir,
+    ]);
+    if (result.status !== 0) {
+      throw new Error(`Failed to clone registry: ${result.stderr?.toString()}`);
+    }
   }
 
-  execSync(`cd "${repoDir}" && git sparse-checkout add "registry/skills/${skillId}"`, {
-    stdio: "pipe",
+  const sparseResult = spawnSync("git", ["sparse-checkout", "add", `registry/skills/${skillId}`], {
+    cwd: repoDir,
   });
+  if (sparseResult.status !== 0) {
+    throw new Error(`Failed to checkout skill: ${sparseResult.stderr?.toString()}`);
+  }
 
   const sourcePath = join(repoDir, "registry", "skills", skillId);
   if (!existsSync(sourcePath)) {
@@ -142,9 +150,8 @@ function fetchSkillFolder(skillId: string): string {
   return skillDir;
 }
 
-/**
- * Build a sandboxed environment containing only the vars the skill declared.
- */
+import { spawnSync } from "child_process";
+
 function buildSandboxedEnv(requiresEnv: string[]): Record<string, string> {
   const env: Record<string, string> = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
@@ -162,15 +169,9 @@ function buildSandboxedEnv(requiresEnv: string[]): Record<string, string> {
   return env;
 }
 
-// Paths for secure input/output file handling
 const INPUT_FILE_PATH = "/tmp/skill-input.json";
 const OUTPUT_FILE_PATH = "/tmp/skill-output.txt";
 
-/**
- * Execute a skill with sandboxed environment variables.
- * User input is passed via a file to prevent shell injection.
- * If expectedHash is provided, verifies the skill content matches before execution.
- */
 export async function executeSkill(
   skillId: string,
   userInput: string,
@@ -178,7 +179,6 @@ export async function executeSkill(
 ): Promise<ExecutionResult> {
   const skillDir = fetchSkillFolder(skillId);
 
-  // Verify content hash if provided (important for verifiability)
   if (expectedHash) {
     const actualHash = computeContentHash(skillDir);
     if (actualHash !== expectedHash) {
@@ -204,24 +204,20 @@ export async function executeSkill(
   const steps: ExecutionStep[] = [];
   let lastOutput = "";
 
-  // Write user input to a file instead of substituting into shell commands
-  // This prevents shell injection attacks
   writeFileSync(INPUT_FILE_PATH, JSON.stringify(userInput), { mode: SECURE_FILE_MODE });
 
   try {
     if (executionSteps.length > 0) {
       for (const step of executionSteps) {
-        // Replace template variables with file paths (not inline content)
         const command = step.run
           .replace(/\{\{input\}\}/g, INPUT_FILE_PATH)
           .replace(/\{\{output\}\}/g, OUTPUT_FILE_PATH);
 
-        const result = runCommand(command, skillDir, sandboxedEnv);
+        const result = await runCommandWithIPC(command, skillDir, sandboxedEnv);
         steps.push(result);
         lastOutput = result.stdout;
       }
     } else {
-      // No execution manifest — return a message (skills should have manifests)
       lastOutput = `Skill ${skillId} has no execution manifest. Input was: ${userInput.slice(0, 100)}`;
       steps.push({
         command: "(no execution manifest)",
@@ -237,7 +233,6 @@ export async function executeSkill(
       skillId,
     };
   } finally {
-    // Clean up input file
     try {
       unlinkSync(INPUT_FILE_PATH);
     } catch {
@@ -246,28 +241,149 @@ export async function executeSkill(
   }
 }
 
-function runCommand(command: string, cwd: string, env: Record<string, string>): ExecutionStep {
-  try {
-    const stdout = execSync(command, {
+/**
+ * Run a command with fd3 IPC support for x402 payment requests.
+ *
+ * fd3 is a dedicated IPC channel that doesn't interfere with stdout/stderr.
+ * Skills that need x402 payments write JSON to fd3; the bridge handles
+ * signing and HTTP, then writes the response back to fd3.
+ *
+ * Skills that don't use fd3 work unchanged — the channel is passive.
+ */
+async function runCommandWithIPC(
+  command: string,
+  cwd: string,
+  env: Record<string, string>
+): Promise<ExecutionStep> {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+
+    // Spawn with fd3 as IPC channel: stdin(0), stdout(1), stderr(2), ipc(3)
+    // Using 'pipe' for fd3 creates a bidirectional stream
+    const subprocess = spawn("sh", ["-c", command], {
       cwd,
       env,
-      timeout: EXEC_TIMEOUT_MS,
-      maxBuffer: EXEC_MAX_BUFFER,
-      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
     });
 
-    return { command, stdout: stdout ?? "", stderr: "", exitCode: 0 };
-  } catch (error: unknown) {
-    const execError = error as {
-      stdout?: string;
-      stderr?: string;
-      status?: number;
-    };
-    return {
-      command,
-      stdout: execError.stdout ?? "",
-      stderr: execError.stderr ?? "",
-      exitCode: execError.status ?? 1,
-    };
-  }
+    // Get fd3 streams for IPC
+    const fd3Read = subprocess.stdio[3] as NodeJS.ReadableStream | null;
+    const fd3Write = subprocess.stdio[3] as NodeJS.WritableStream | null;
+
+    // Capture stdout (normal output, unchanged from before)
+    subprocess.stdout?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stdout += text;
+      // Enforce max buffer
+      if (stdout.length > EXEC_MAX_BUFFER) {
+        stdout = stdout.slice(-EXEC_MAX_BUFFER);
+      }
+    });
+
+    // Capture stderr
+    subprocess.stderr?.on("data", (chunk: Buffer) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (stderr.length > EXEC_MAX_BUFFER) {
+        stderr = stderr.slice(-EXEC_MAX_BUFFER);
+      }
+    });
+
+    // Handle fd3 IPC for x402 requests
+    let rl: ReadlineInterface | null = null;
+    if (fd3Read && fd3Write) {
+      rl = createInterface({ input: fd3Read as NodeJS.ReadableStream });
+
+      rl.on("line", async (line: string) => {
+        try {
+          const msg = JSON.parse(line);
+          if (msg.action === "x402_request") {
+            const response = await handleX402Request(msg as X402Request);
+            (fd3Write as NodeJS.WritableStream).write(JSON.stringify(response) + "\n");
+          }
+        } catch (err) {
+          // Invalid JSON or bridge error — send error response
+          const errorResponse = {
+            error: "IPC_ERROR",
+            message: err instanceof Error ? err.message : String(err),
+            recoverable: false,
+          };
+          (fd3Write as NodeJS.WritableStream).write(JSON.stringify(errorResponse) + "\n");
+        }
+      });
+    }
+
+    // Timeout handling
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      subprocess.kill("SIGTERM");
+      // Give it a moment to clean up, then force kill
+      setTimeout(() => {
+        if (!subprocess.killed) {
+          subprocess.kill("SIGKILL");
+        }
+      }, 1000);
+    }, EXEC_TIMEOUT_MS);
+
+    // Handle process completion
+    subprocess.on("close", (code: number | null) => {
+      clearTimeout(timeout);
+      rl?.close();
+
+      if (timedOut) {
+        resolve({
+          command,
+          stdout,
+          stderr: stderr + "\n[TIMEOUT] Process killed after " + EXEC_TIMEOUT_MS + "ms",
+          exitCode: 124, // Standard timeout exit code
+        });
+      } else {
+        resolve({
+          command,
+          stdout,
+          stderr,
+          exitCode: code ?? 1,
+        });
+      }
+    });
+
+    // Handle spawn errors
+    subprocess.on("error", (err: Error) => {
+      clearTimeout(timeout);
+      rl?.close();
+      resolve({
+        command,
+        stdout,
+        stderr: stderr + "\n[ERROR] " + err.message,
+        exitCode: 1,
+      });
+    });
+  });
+}
+
+/**
+ * Legacy synchronous command runner (for backward compatibility in tests).
+ * @deprecated Use runCommandWithIPC for production. This doesn't support fd3 IPC.
+ */
+export function runCommandSync(
+  command: string,
+  cwd: string,
+  env: Record<string, string>
+): ExecutionStep {
+  const result = spawnSync("sh", ["-c", command], {
+    cwd,
+    env,
+    timeout: EXEC_TIMEOUT_MS,
+    maxBuffer: EXEC_MAX_BUFFER,
+    encoding: "utf-8",
+  });
+
+  return {
+    command,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+    exitCode: result.status ?? 1,
+  };
 }

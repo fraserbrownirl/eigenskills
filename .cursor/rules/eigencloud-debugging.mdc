@@ -77,6 +77,16 @@ The backend uses `DEPLOY_STRATEGY` env var to choose the deployment path:
 | `Failed to pull image ... 404` | Image not pushed to Docker Hub | Build with `--platform linux/amd64` and push |
 | Private key in error logs | `execSync` includes command in error message | Wrap in try/catch, sanitize with regex |
 | `EIGENCOMPUTE_PRIVATE_KEY not set` | Missing env var | Set in `.env` or Fly.io secrets |
+| `ECONNREFUSED` on agent instance IP | Server bound to `localhost` instead of `0.0.0.0` | Use `app.listen(PORT, "0.0.0.0", cb)` — TEE containers must bind all interfaces |
+| `Workload completed` + immediate shutdown in TEE logs | Container exited or server unreachable (log redirection blocked in hardened mode) | Check `0.0.0.0` binding first; add `process.on("uncaughtException")` handler to prevent silent crashes |
+| `logging redirection only allowed on debug environment by image` | TEE hardened mode blocks stdout capture | Informational only — use `logVisibility: "private"` and add external logging (startup beacon, backend heartbeat) |
+
+## Context7 Queries by Error Type (Extended)
+
+| Error Pattern | Context7 Query |
+|---------------|----------------|
+| Container deployed but unreachable | "EigenCompute port exposure network binding 0.0.0.0" |
+| TEE logs show `Workload completed` | "Confidential Space return codes workload completed debug" |
 
 ## Do Not
 
@@ -87,3 +97,5 @@ The backend uses `DEPLOY_STRATEGY` env var to choose the deployment path:
 - Pass image reference as positional argument (use `--image-ref` flag)
 - Log raw `execSync` errors without sanitizing private keys
 - Use the CLI or GitHub Actions strategy when the SDK strategy works (it's simpler and more reliable)
+- Bind Express/HTTP servers to `localhost` — always use `0.0.0.0` in containers deployed to EigenCompute
+- Use `logVisibility: "public"` — hardened TEE mode blocks it; use `"private"` instead

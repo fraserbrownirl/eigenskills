@@ -2,9 +2,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Terminal, List, Activity, Settings, Code } from "lucide-react";
 
+type TabType = "task" | "skills" | "history" | "logs" | "settings";
+
 interface TabNavigationProps {
   activeTab: string;
-  onTabChange: (tab: any) => void;
+  onTabChange: (tab: TabType) => void;
 }
 
 export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
@@ -17,7 +19,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
   ];
 
   return (
-    <div className="flex flex-wrap gap-2 border-b border-zinc-800 pb-2">
+    <div className="flex flex-wrap gap-2 border-b border-border pb-2">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         return (
@@ -28,7 +30,9 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             onClick={() => onTabChange(tab.id)}
             className={cn(
               "gap-2",
-              activeTab === tab.id ? "bg-zinc-800 text-white" : "text-zinc-400 hover:text-white"
+              activeTab === tab.id
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
             )}
           >
             <Icon className="h-4 w-4" />

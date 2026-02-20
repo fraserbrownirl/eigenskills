@@ -163,7 +163,7 @@ export async function deployAgent(name: string, envVars: EnvVar[]): Promise<Depl
       imageDigest,
       envFile: envFilePath,
       instanceType: "g1-standard-4t",
-      logVisibility: "off",
+      logVisibility: "private",
       resourceUsageMonitoring: "enable",
     });
 
@@ -209,7 +209,7 @@ export async function upgradeAgent(appId: string, envVars: EnvVar[]): Promise<vo
         imageDigest,
         envFile: envFilePath,
         instanceType: "g1-standard-4t",
-        logVisibility: "off",
+        logVisibility: "private",
         resourceUsageMonitoring: "enable",
       }
     );

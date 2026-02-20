@@ -120,10 +120,12 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
   const shortAddress = account ? `${account.slice(0, 6)}...${account.slice(-4)}` : null;
 
   return (
-    <Card className="w-full border-zinc-800 bg-zinc-900/50 backdrop-blur-xl shadow-2xl">
+    <Card className="w-full border-border bg-card shadow-lg">
       <CardHeader className="text-center">
         <CardTitle>Connect Wallet</CardTitle>
-        <CardDescription>Connect your wallet to deploy and command your agent army</CardDescription>
+        <CardDescription>
+          Connect your wallet to deploy and command your SkillSeal agents
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {account ? (
@@ -132,11 +134,11 @@ export default function ConnectWallet({ onConnected }: ConnectWalletProps) {
               <ShieldCheck className="h-5 w-5" />
               <span className="font-medium">Wallet Connected</span>
             </div>
-            <p className="font-mono text-lg text-white">{shortAddress}</p>
+            <p className="font-mono text-lg text-foreground">{shortAddress}</p>
             {chainName && <p className="mt-1 text-xs text-muted-foreground">{chainName}</p>}
           </div>
         ) : (
-          <div className="rounded-lg border border-dashed border-zinc-700 p-8 text-center text-muted-foreground">
+          <div className="rounded-lg border border-dashed border-border p-8 text-center text-muted-foreground">
             <Wallet className="mx-auto mb-3 h-10 w-10 opacity-50" />
             <p>No wallet connected</p>
           </div>

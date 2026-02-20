@@ -198,6 +198,9 @@ Only terminate when you want to **permanently destroy** the agent:
 - Requires fresh deploy with new wallet address
 - New wallet requires new EigenAI grant activation at https://eigenarcade.com
 
+### TEE Network Binding (Critical)
+**Servers MUST bind to `0.0.0.0`, not localhost.** Inside the TEE container, `app.listen(PORT)` defaults to `127.0.0.1`, which rejects all external connections. The symptom is a container that shows "running" but returns `ECONNREFUSED` on the instance IP. Fix: `app.listen(PORT, "0.0.0.0", callback)`. This applies to the agent's Express server and any other HTTP listener deployed to EigenCompute.
+
 ### TEE Constraints (Critical for Architecture)
 
 **No Persistent Storage**

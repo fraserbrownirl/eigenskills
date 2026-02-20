@@ -6,12 +6,12 @@ import AgentSetup from "@/components/AgentSetup";
 import Dashboard from "@/components/Dashboard";
 import { getAgentInfo } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { MemeLogo } from "@/components/ui/meme-logo";
+import { SealLogo } from "@/components/ui/meme-logo";
 import { Shield, Cpu, Lock, LogOut } from "lucide-react";
 
 type View = "landing" | "setup" | "dashboard" | "loading";
 
-const SESSION_KEY = "eigenskills-session";
+const SESSION_KEY = "skillseal-session";
 
 export default function Home() {
   const [view, setView] = useState<View>("loading");
@@ -100,8 +100,8 @@ export default function Home() {
       <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 md:px-8">
           <div className="flex items-center gap-2">
-            <MemeLogo className="h-9 w-9" />
-            <span className="text-lg font-bold tracking-tight">EigenSkills</span>
+            <SealLogo size={32} />
+            <span className="text-lg font-bold tracking-tight">SkillSeal</span>
           </div>
 
           {address && (
@@ -136,7 +136,7 @@ export default function Home() {
                 <Shield className="mr-2 h-4 w-4" />
                 Self-Sovereign AI on EigenLayer
               </div>
-              <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl bg-gradient-to-br from-foreground to-muted-foreground bg-clip-text text-transparent">
+              <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl md:text-7xl bg-gradient-to-r from-blue-600 via-blue-500 to-pink-500 bg-clip-text text-transparent">
                 Build an army of money-making agents that verify
               </h1>
               <p className="mx-auto max-w-2xl text-lg text-muted-foreground md:text-xl">
@@ -152,17 +152,17 @@ export default function Home() {
             <div className="grid grid-cols-1 gap-8 pt-12 text-left md:grid-cols-3 max-w-5xl w-full">
               <Feature
                 icon={Shield}
-                title="Self-Sovereign Wallet"
+                title="Sealed Wallets"
                 description="Every agent gets its own wallet inside the TEE. Only your agent holds the keys — not us, not anyone."
               />
               <Feature
                 icon={Cpu}
-                title="Verifiable Everything"
-                description="Every action is signed and verified on-chain by EigenAI. Full audit trail. Zero trust required."
+                title="Seal of Verification"
+                description="Every action is signed and verified on-chain. Full audit trail. Zero trust required."
               />
               <Feature
                 icon={Lock}
-                title="Encrypted by Default"
+                title="Sealed Secrets"
                 description="Secrets are encrypted with KMS and only decrypted inside the TEE. Not even the platform can read them."
               />
             </div>

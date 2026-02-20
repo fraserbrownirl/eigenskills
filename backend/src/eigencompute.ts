@@ -273,34 +273,14 @@ export async function triggerGitHubDeploy(
 }
 
 /**
- * Deploy a new agent instance to EigenCompute.
- *
- * Strategy priority:
- * 1. DEPLOY_STRATEGY=sdk (default) — uses @layr-labs/ecloud-sdk directly. No Docker, no CLI.
- * 2. DEPLOY_STRATEGY=github-actions (or legacy USE_GITHUB_ACTIONS=true) — triggers GitHub Actions.
- * 3. DEPLOY_STRATEGY=cli — shells out to ecloud CLI (requires Docker daemon).
+ * Deploy via CLI with the tested command that works non-interactively.
+ * The only interactive prompt is "Build from verifiable source?" which we answer with y/n.
  */
-export async function deployAgent(
+async function deployViaCli(
   name: string,
-  envVars: EnvVar[]
-): Promise<DeployResult | AsyncDeployResult> {
-  const safeName = validateShellInput(name, "agent name");
-
-  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
-
-  if (strategy === "sdk") {
-    const sdk = await import("./eigencompute-sdk.js");
-    return sdk.deployAgent(safeName, envVars);
-  }
-
-  if (strategy === "github-actions") {
-    return triggerGitHubDeploy("deploy-agent", {
-      appName: safeName,
-      envVars,
-    });
-  }
-
-  // CLI fallback (needs Docker daemon)
+  envVars: EnvVar[],
+  verifiable: boolean
+): Promise<DeployResult> {
   if (!EIGENCOMPUTE_PRIVATE_KEY) {
     throw new Error(
       "EIGENCOMPUTE_PRIVATE_KEY is not set. " +
@@ -309,26 +289,31 @@ export async function deployAgent(
     );
   }
 
+  const safeName = validateShellInput(name, "agent name");
   const envFilePath = buildEnvFile(envVars);
 
   try {
+    const answer = verifiable ? "y" : "n";
+
     const command = [
       "ecloud compute app deploy",
-      `--image-ref ${AGENT_IMAGE_REF}`,
-      `--env-file ${envFilePath}`,
-      `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
-      "--log-visibility public",
-      "--resource-usage-monitoring enable",
-      "--instance-type g1-standard-4t",
-      "--skip-profile",
       `--name ${safeName}`,
+      `--image-ref ${AGENT_IMAGE_REF}`,
+      "--instance-type g1-standard-4t",
+      "--resource-usage-monitoring disable",
+      `--env-file ${envFilePath}`,
+      "--skip-profile",
+      "--log-visibility private",
+      `--environment ${EIGENCOMPUTE_ENVIRONMENT}`,
     ].join(" ");
 
-    console.log(`Deploying agent: ${safeName}`);
-    console.log(`Image: ${AGENT_IMAGE_REF}`);
+    console.log(`[CLI] Deploying agent: ${safeName} (verifiable: ${verifiable})`);
+    console.log(`[CLI] Image: ${AGENT_IMAGE_REF}`);
 
-    const execOpts = getExecOptions(TIMEOUT_DEPLOY);
-    const output = execWithSanitizedErrors(`echo N | ${command}`, execOpts);
+    const output = execWithSanitizedErrors(
+      `echo "${answer}" | ${command}`,
+      getExecOptions(TIMEOUT_DEPLOY)
+    );
 
     const appIdMatch =
       output.match(/App ID:\s*(\S+)/i) ?? output.match(/\bID:\s*(0x[a-fA-F0-9]+)/i);
@@ -352,6 +337,51 @@ export async function deployAgent(
     } catch {
       // ignore cleanup errors
     }
+  }
+}
+
+/**
+ * Deploy a new agent instance to EigenCompute.
+ *
+ * Strategy: CLI primary with SDK fallback.
+ * - GitHub Actions takes priority if configured (async deployment)
+ * - CLI is the primary path (simpler, tested command)
+ * - SDK is fallback when CLI fails (only for non-verifiable builds)
+ */
+export async function deployAgent(
+  name: string,
+  envVars: EnvVar[],
+  verifiable: boolean = false
+): Promise<DeployResult | AsyncDeployResult> {
+  const safeName = validateShellInput(name, "agent name");
+  const strategy = USE_GITHUB_ACTIONS ? "github-actions" : DEPLOY_STRATEGY;
+
+  // GitHub Actions (async) takes priority if configured
+  if (strategy === "github-actions") {
+    return triggerGitHubDeploy("deploy-agent", {
+      appName: safeName,
+      envVars,
+    });
+  }
+
+  // Primary: CLI
+  try {
+    return await deployViaCli(safeName, envVars, verifiable);
+  } catch (cliError) {
+    console.warn("[CLI deploy failed, trying SDK fallback]", cliError);
+
+    // Fallback: SDK (only for non-verifiable, SDK doesn't support verifiable choice)
+    if (!verifiable && strategy === "sdk") {
+      try {
+        const sdk = await import("./eigencompute-sdk.js");
+        return await sdk.deployAgent(safeName, envVars);
+      } catch (sdkError) {
+        console.error("[SDK fallback also failed]", sdkError);
+        throw cliError; // Throw original CLI error
+      }
+    }
+
+    throw cliError;
   }
 }
 
